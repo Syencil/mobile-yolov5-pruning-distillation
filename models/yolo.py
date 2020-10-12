@@ -171,7 +171,12 @@ def parse_model(md, ch):  # model_dict, input_channels(3)
             #     e = math.log(c2 / ch[1]) / math.log(2)
             #     c2 = int(ch[1] * ex ** e)
             # if m != Focus:
-            c2 = make_divisible(c2 * gw, 8) if c2 != no else c2
+            if m == Focus:
+                c2 = make_divisible(32 * gw, 4 if gw == 0.1 else 8)
+            elif m == InvertedResidual:
+                c2 = make_divisible(c2 * gw, 4 if gw == 0.1 else 8)
+            else:
+                c2 = make_divisible(c2 * gw, 8) if c2 != no else c2
 
             # Experimental
             # if i > 0 and args[0] != no:  # channel expansion factor
@@ -208,7 +213,7 @@ def parse_model(md, ch):  # model_dict, input_channels(3)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', type=str, default='mobile-yolo_voc.yaml', help='model.yaml')
+    parser.add_argument('--cfg', type=str, default='mobile-yolo5l_voc.yaml', help='model.yaml')
     parser.add_argument('--device', default='cpu', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     opt = parser.parse_args()
     opt.cfg = glob.glob('./**/' + opt.cfg, recursive=True)[0]  # find file

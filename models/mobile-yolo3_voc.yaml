@@ -1,7 +1,7 @@
 # parameters
 nc: 20  # number of classes
 depth_multiple: 1  # model depth multiple
-width_multiple: 0.25  # layer channel multiple
+width_multiple: 1  # layer channel multiple
 
 # anchors
 anchors:
@@ -34,19 +34,37 @@ backbone:
 
 # yolov5 head
 head:
-  [[-1, 1, BottleneckCSP, [320, False]],  # 11  320X20X20
+  [[-1, 1, Conv, [512, 1, 1]],  # 18  320X20X20
+   [-1, 1, Conv, [1024, 3, 1]],
+   [-1, 1, Conv, [512, 1, 1]],
+   [-1, 1, Conv, [1024, 3, 1]],
+   [-1, 1, Conv, [512, 1, 1]], # 22
+
+   [-1, 1, Conv, [1024, 3, 1]],
    [-1, 1, nn.Conv2d, [na * (nc + 5), 1, 1]],  # 12 (P5/32-large)  75X20X20
 
-   [-2, 1, nn.Upsample, [None, 2, 'nearest']],  # 320X40X40
-   [[-1, 10], 1, Concat, [1]],  # cat backbone P4
-   [-1, 1, Conv, [160, 1, 1]],
-   [-1, 1, BottleneckCSP, [160, False]],
-   [-1, 1, nn.Conv2d, [na * (nc + 5), 1, 1]],  # 17 (P4/16-medium)
+   [-3, 1, Conv, [256, 1, 1]],
+   [-1, 1, nn.Upsample, [None, 2, 'nearest']],  # 320X40X40
 
-   [-2, 1, nn.Upsample, [None, 2, 'nearest']],
-   [[-1, 6], 1, Concat, [1]],  # cat backbone P3
+   [[-1, 13], 1, Concat, [1]],  # cat backbone P4
+   [-1, 1, Conv, [256, 1, 1]],  # 28  320X20X20
+   [-1, 1, Conv, [512, 3, 1]],
    [-1, 1, Conv, [256, 1, 1]],
-   [-1, 1, BottleneckCSP, [80, False]],
+   [-1, 1, Conv, [512, 3, 1]],
+   [-1, 1, Conv, [256, 1, 1]], # 32
+
+   [-1, 1, Conv, [512, 3, 1]],
+   [-1, 1, nn.Conv2d, [na * (nc + 5), 1, 1]],  # 34 (P4/16-medium)
+
+   [-3, 1, Conv, [128, 1, 1]],
+   [-1, 1, nn.Upsample, [None, 2, 'nearest']],
+
+   [[-1, 6], 1, Concat, [1]],  # cat backbone P3
+   [-1, 1, Conv, [128, 1, 1]],  # 28  320X20X20
+   [-1, 1, Conv, [256, 3, 1]],
+   [-1, 1, Conv, [128, 1, 1]],
+   [-1, 1, Conv, [256, 3, 1]],
+   [-1, 1, Conv, [128, 1, 1]], # 32
    [-1, 1, nn.Conv2d, [na * (nc + 5), 1, 1]],  # 22 (P3/8-small)
 
    [[], 1, Detect, [nc, anchors]],  # Detect(P3, P4, P5)

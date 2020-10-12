@@ -166,6 +166,4 @@ class InvertedResidual(nn.Module):
         else:
             return self.conv(x)
 
-    def fuseforward(self, x):
-        return
 

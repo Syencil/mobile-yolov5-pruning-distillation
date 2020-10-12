@@ -446,56 +446,81 @@ if __name__ == '__main__':
     parser.add_argument('--multi-scale', default=True, action='store_true', help='vary img-size +/- 50%')
     parser.add_argument('--single-cls', action='store_true', help='train as single-class dataset')
     parser.add_argument('--nw', type=int, default=None, help='num of worker')
+    # pruning
     parser.add_argument('--sl', default=0, type=float, help='sparse learning')
     parser.add_argument('--ft', action='store_true', help='fine-tune')
+    # distillation
+    parser.add_argument('--dist', action='store_true', help='distillation')
+    parser.add_argument('--t-weight', type=str, help='teacher model for distillation')
     opt = parser.parse_args()
-
-    if opt.type == "mvoc25":
-        opt.cfg = 'models/mobile-yolo_voc25.yaml'
-        opt.data = "data/voc.yaml"
-        opt.name = "mvoc25"
-        opt.weights = "/root/.cache/torch/checkpoints/mobilenetv2_0.25-b61d2159.pth"
-        opt.epochs = 50
-        opt.img_size = [480, 640]
-        opt.batch_size = 40
 
     if opt.type == "voc":
         opt.cfg = 'models/yolov5s_voc.yaml'
         opt.data = "data/voc.yaml"
         opt.weights = "/data/checkpoints/yolov5/yolov5s.pt"
-        opt.name = "voc"
+        opt.name = opt.type
         opt.epochs = 50
-        opt.batch_size = 6
+        opt.batch_size = 24
+        opt.multi_scale = False
 
-    if opt.type == "mvoc":
-        opt.cfg = 'models/mobile-yolo_voc.yaml'
+    if opt.type == "mvocs":
+        opt.cfg = 'models/mobile-yolo5s.yaml'
         opt.data = "data/voc.yaml"
-        opt.name = "mvoc"
+        opt.weights = "/root/.cache/torch/checkpoints/mobilenet_v2-b0353104.pth"
+        opt.name = opt.type
+        opt.epochs = 50
+        opt.batch_size = 24
+        opt.multi_scale = False
+
+    if opt.type == "mvocl":
+        opt.cfg = 'models/mobile-yolo5l_voc.yaml'
+        opt.data = "data/voc.yaml"
+        opt.name = opt.type
         opt.weights = "/root/.cache/torch/checkpoints/mobilenet_v2-b0353104.pth"
         opt.epochs = 50
-        opt.img_size = [480, 640]
-        opt.batch_size = 40
+        opt.batch_size = 24
+        opt.multi_scale = False
 
-    if opt.type == "smvoc":
-        opt.cfg = 'models/mobile-yolo_voc.yaml'
+    if opt.type == "mvoc3":
+        opt.cfg = 'models/mobile-yolo3_voc.yaml'
         opt.data = "data/voc.yaml"
-        opt.name = "smvoc"
+        opt.name = opt.type
         opt.weights = "/root/.cache/torch/checkpoints/mobilenet_v2-b0353104.pth"
         opt.epochs = 50
-        opt.img_size = [480, 640]
-        opt.batch_size = 40
-        opt.sl = 1e-3
+        opt.batch_size = 24
+        opt.multi_scale = False
+
+    if opt.type == "smvocs":
+        opt.cfg = 'models/mobile-yolo5s_voc.yaml'
+        opt.data = "data/voc.yaml"
+        opt.name = opt.type
+        opt.weights = "/root/.cache/torch/checkpoints/mobilenet_v2-b0353104.pth"
+        opt.epochs = 50
+        opt.batch_size = 24
+        opt.multi_scale = False
+        opt.sl = 6e-4
         hyp["sl"] = opt.sl
 
-    if opt.type == "finetune":
-        opt.cfg = 'models/mobile-yolo_voc.yaml'
+    if opt.type == "fmvocs":
+        opt.cfg = 'models/mobile-yolo5s_voc.yaml'
         opt.data = "data/voc.yaml"
-        opt.name = "fsmvoc"
+        opt.name = opt.type
         opt.weights = "outputs/smvoc/weights/pruned_auto.pt"
-        opt.img_size = [480, 640]
         opt.epochs = 20
-        opt.batch_size = 40
+        opt.batch_size = 24
+        opt.multi_scale = False
         opt.ft = True
+
+    if opt.type == "dmvocs":
+        opt.cfg = 'models/mobile-yolo5s_voc.yaml'
+        opt.data = "data/voc.yaml"
+        opt.name = opt.type
+        opt.weights = "/root/.cache/torch/checkpoints/mobilenet_v2-b0353104.pth"
+        opt.epochs = 50
+        opt.batch_size = 24
+        opt.multi_scale = False
+        opt.dist = True
+        opt.t_weight = "outputs/voc/weights/best_voc.pt"
 
     if opt.nw is None:
         nw = min([os.cpu_count(), opt.batch_size if opt.batch_size > 1 else 0, 8])  # number of workers

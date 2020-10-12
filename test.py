@@ -25,6 +25,7 @@ def test(data,
     if model is None:
         training = False
         device = torch_utils.select_device(opt.device, batch_size=batch_size)
+
         half = device.type != 'cpu'  # half precision only supported on CUDA
 
         # Remove previous
@@ -33,7 +34,7 @@ def test(data,
 
         # Load model
         google_utils.attempt_download(weights)
-        model = torch.load(weights, map_location=device)[
+        model = torch.load(weights, map_location="cpu")[
             'model'].float()  # load to FP32
         torch_utils.model_info(model)
         model.fuse()
@@ -299,7 +300,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--weights',
         type=str,
-        default='outputs/mvoc/weights/pruned_1.pt',
+        default='',
         help='model.pt path')
     parser.add_argument(
         '--data',

@@ -7,21 +7,33 @@ Authors: luozhiwang(luozw1994@outlook.com)
 Date: 2020/9/7
 """
 import os
+import argparse
 import numpy as np
 import torch
 import torch.nn as nn
 import torch_pruning as tp
 import copy
 import matplotlib.pyplot as plt
+from models.yolo import Model
 
 
-def load_model(cfg="models/mobile-yolo_voc.yaml", weights="./outputs/mvoc/weights/best_mvoc.pt"):
+def load_model(cfg="models/mobile-yolo5l_voc.yaml", weights="./outputs/mvoc/weights/best_mvoc.pt"):
+    restor_num = 0
+    ommit_num = 0
     model = Model(cfg).to(device)
     ckpt = torch.load(weights, map_location=device)  # load checkpoint
     dic = {}
     for k, v in ckpt['model'].float().state_dict().items():
         if k in model.state_dict() and model.state_dict()[k].shape == v.shape:
             dic[k] = v
+            restor_num += 1
+        else:
+            ommit_num += 1
+
+    print("Build model from", cfg)
+    print("Resotre weight from", weights)
+    print("Restore %d vars, ommit %d vars" % (restor_num, ommit_num))
+
     ckpt['model'] = dic
     model.load_state_dict(ckpt['model'], strict=False)
     del ckpt
@@ -55,18 +67,12 @@ def channel_prune(ori_model, example_inputs, output_transform, pruned_prob=0.3, 
 
     prunable_module_type = (nn.BatchNorm2d)
 
-    min_idx = 6
-    max_idx = 207
     ignore_idx = [230, 260, 290]
 
     prunable_modules = []
     for i, m in enumerate(model.modules()):
         if i in ignore_idx:
             continue
-        # if i < min_idx:
-        #     continue
-        # if i > max_idx:
-        #     continue
         if isinstance(m, prunable_module_type):
             prunable_modules.append(m)
     ori_size = tp.utils.count_params(model)
@@ -75,7 +81,6 @@ def channel_prune(ori_model, example_inputs, output_transform, pruned_prob=0.3, 
     bn_val, max_val = bn_analyze(prunable_modules, "render_img/before_pruning.jpg")
     if thres is None:
         thres_pos = int(pruned_prob * len(bn_val))
-        # thres = min(max_val[0], bn_val[thres_pos])
         thres_pos = min(thres_pos, len(bn_val)-1)
         thres_pos = max(thres_pos, 0)
         thres = bn_val[thres_pos]
@@ -94,14 +99,11 @@ def channel_prune(ori_model, example_inputs, output_transform, pruned_prob=0.3, 
             prune_fn = tp.prune_batchnorm
             L1_norm = np.abs(weight)
 
-        ch = tp.utils.count_prunable_channels(layer_to_prune)
         pos = np.array([i for i in range(len(L1_norm))])
         pruned_idx_mask = L1_norm < thres
         prun_index = pos[pruned_idx_mask].tolist()
         if len(prun_index) == len(L1_norm):
             del prun_index[np.argmax(L1_norm)]
-        # num_pruned = int(ch * pruned_prob)
-        # prun_index = np.argsort(L1_norm)[:num_pruned].tolist()
 
         plan = DG.get_pruning_plan(layer_to_prune, prune_fn, prun_index)
         plan.exec()
@@ -122,11 +124,17 @@ def channel_prune(ori_model, example_inputs, output_transform, pruned_prob=0.3, 
         print("------------------------------------------------------\n")
     return model
 
+
 if __name__ == '__main__':
-    from models.yolo import Model
-    cfg = "models/mobile-yolo_voc.yaml"
-    weights = "./outputs/smvoc/weights/best_smvoc.pt"
-    save_dir = "./outputs/smvoc/weights"
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--cfg', default="models/mobile-yolo5s_voc.yaml", type=str, help='*.cfg path')
+    parser.add_argument('--weights', default="outputs/smvocs/weights/best_smvocs.pt", type=str, help='*.data path')
+    parser.add_argument('--save-dir', default="outputs/smvocs/weights", type=str, help='*.data path')
+    opt = parser.parse_args()
+
+    cfg = opt.cfg
+    weights = opt.weights
+    save_dir = opt.save_dir
 
     device = torch.device('cpu')
     model = load_model(cfg, weights)

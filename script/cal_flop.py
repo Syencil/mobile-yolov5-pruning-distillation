@@ -20,9 +20,9 @@ if __name__ == '__main__':
 
     img = torch.zeros((opt.batch_size, 3, *opt.img_size))
 
-    model = torch.load(opt.weights, map_location=torch.device('cpu'))["model"]
-    # if hasattr(model, "model"):
-    #     model = model["model"]
+    model = torch.load(opt.weights, map_location=torch.device('cpu'))
+    if model.get('model', None) is not None:
+        model = model["model"]
     model.float()
     model.eval()
     macs, params = profile(model, inputs=(img, ))
