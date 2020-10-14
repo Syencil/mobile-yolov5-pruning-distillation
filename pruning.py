@@ -130,6 +130,8 @@ if __name__ == '__main__':
     parser.add_argument('--cfg', default="models/mobile-yolo5s_voc.yaml", type=str, help='*.cfg path')
     parser.add_argument('--weights', default="outputs/smvocs/weights/best_smvocs.pt", type=str, help='*.data path')
     parser.add_argument('--save-dir', default="outputs/smvocs/weights", type=str, help='*.data path')
+    parser.add_argument('-p', '--prob', default=0.5, type=float, help='pruning prob')
+    parser.add_argument('-t', '--thres', default=0, type=float, help='pruning thres')
     opt = parser.parse_args()
 
     cfg = opt.cfg
@@ -142,10 +144,16 @@ if __name__ == '__main__':
     example_inputs = torch.zeros((1, 3, 64, 64), dtype=torch.float32).to()
     output_transform = None
     # for prob in [0, 0.01, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7]:
-    for prob in ["p.auto"]:
-        pruned_model = channel_prune(model, example_inputs=example_inputs,
-                                     output_transform=output_transform, pruned_prob=prob, thres=0.01)
-        pruned_model.model[-1].export = False
-        save_path = os.path.join(save_dir, "pruned_"+str(prob).split(".")[-1] + ".pt")
-        torch.save({"model": pruned_model.module if hasattr(pruned_model, 'module') else pruned_model}, save_path)
+    if opt.thres != 0:
+        thres = opt.thres
+        prob = "p.auto"
+    else:
+        thres = None
+        prob = opt.prob
+
+    pruned_model = channel_prune(model, example_inputs=example_inputs,
+                                 output_transform=output_transform, pruned_prob=prob, thres=thres)
+    pruned_model.model[-1].export = False
+    save_path = os.path.join(save_dir, "pruned_"+str(prob).split(".")[-1] + ".pt")
+    torch.save({"model": pruned_model.module if hasattr(pruned_model, 'module') else pruned_model}, save_path)
 

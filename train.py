@@ -165,6 +165,15 @@ def train(hyp):
             raise KeyError(s) from e
         del ckpt
 
+    if opt.dist:
+        print("load t-model from", opt.t_weights)
+        t_model = torch.load(opt.t_weights, map_location=torch.device('cpu'))
+        if t_model.get("model", None) is not None:
+            t_model = t_model["model"]
+        t_model.to(device)
+        t_model.float()
+        t_model.train()
+
     # Mixed precision training https://github.com/NVIDIA/apex
     if mixed_precision:
         model, optimizer = amp.initialize(model, optimizer, opt_level='O1', verbosity=0)
@@ -260,7 +269,6 @@ def train(hyp):
     # torch.autograd.set_detect_anomaly(True)
     for epoch in range(start_epoch, epochs):  # epoch ------------------------------------------------------------------
         model.train()
-
         # Update image weights (optional)
         if dataset.image_weights:
             w = model.class_weights.cpu().numpy() * (1 - maps) ** 2  # class weights
@@ -298,13 +306,21 @@ def train(hyp):
 
             # Forward
             pred = model(imgs)
+            if opt.dist:
+                with torch.no_grad():
+                    t_pred = t_model(imgs)
 
+            # Loss
             if opt.sl > 0:
                 # Sparse Learning
                 loss, loss_items = compute_loss(pred, targets.to(device), model, prunable_modules)
             else:
-                # Loss
-                loss, loss_items = compute_loss(pred, targets.to(device), model)
+                if opt.dist:
+                    # distillation
+                    loss, loss_items = compute_loss(pred, targets.to(device), model, t_p=t_pred)
+                else:
+                    loss, loss_items = compute_loss(pred, targets.to(device), model)
+
             if not torch.isfinite(loss):
                 print('WARNING: non-finite loss, ending training ', loss_items)
                 return results
@@ -451,7 +467,7 @@ if __name__ == '__main__':
     parser.add_argument('--ft', action='store_true', help='fine-tune')
     # distillation
     parser.add_argument('--dist', action='store_true', help='distillation')
-    parser.add_argument('--t-weight', type=str, help='teacher model for distillation')
+    parser.add_argument('--t_weights', type=str, help='teacher model for distillation')
     opt = parser.parse_args()
 
     if opt.type == "voc":
@@ -501,11 +517,21 @@ if __name__ == '__main__':
         opt.sl = 6e-4
         hyp["sl"] = opt.sl
 
-    if opt.type == "fmvocs":
+    if opt.type == "fsmvocs05":
         opt.cfg = 'models/mobile-yolo5s_voc.yaml'
         opt.data = "data/voc.yaml"
         opt.name = opt.type
-        opt.weights = "outputs/smvoc/weights/pruned_auto.pt"
+        opt.weights = "outputs/smvocs/weights/pruned_5.pt"
+        opt.epochs = 20
+        opt.batch_size = 24
+        opt.multi_scale = False
+        opt.ft = True
+
+    if opt.type == "fsmvocs":
+        opt.cfg = 'models/mobile-yolo5s_voc.yaml'
+        opt.data = "data/voc.yaml"
+        opt.name = opt.type
+        opt.weights = "outputs/smvocs/weights/pruned_auto.pt"
         opt.epochs = 20
         opt.batch_size = 24
         opt.multi_scale = False
@@ -520,7 +546,8 @@ if __name__ == '__main__':
         opt.batch_size = 24
         opt.multi_scale = False
         opt.dist = True
-        opt.t_weight = "outputs/voc/weights/best_voc.pt"
+        opt.t_weights = "outputs/voc/weights/best_voc.pt"
+        hyp["dist"] = 1
 
     if opt.nw is None:
         nw = min([os.cpu_count(), opt.batch_size if opt.batch_size > 1 else 0, 8])  # number of workers
