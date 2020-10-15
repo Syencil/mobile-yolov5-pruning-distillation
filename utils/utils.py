@@ -417,15 +417,59 @@ class BCEBlurWithLogitsLoss(nn.Module):
         loss *= alpha_factor
         return loss.mean()
 
-
-def compute_loss(p, targets, model, prunable_modules=None, t_p=None):  # predictions, targets, model
+def compute_pruning_loss(p, prunable_modules, model, loss):
     ft = torch.cuda.FloatTensor if p[0].is_cuda else torch.Tensor
+    ll1 = ft([0])
+    h = model.hyp  # hyperparameters
+    red = 'mean'  # Loss reduction (sum or mean)
+    if prunable_modules is not None:
+        for m in prunable_modules:
+            ll1 += m.weight.norm(1)
+        ll1 /= len(prunable_modules)
+    ll1 *= h['sl']
+    bs = p[0].shape[0]  # batch size
+    loss += ll1 * bs
+    return loss
 
-    if t_p is not None:
-        t_ft = torch.cuda.FloatTensor if t_p[0].is_cuda else torch.Tensor
-        t_lcls, t_lbox, t_lobj = t_ft([0]), t_ft([0]), t_ft([0])
+def compute_distillation_loss(p, t_p, model, loss):
+    t_ft = torch.cuda.FloatTensor if t_p[0].is_cuda else torch.Tensor
+    t_lcls, t_lbox, t_lobj = t_ft([0]), t_ft([0]), t_ft([0])
+    h = model.hyp  # hyperparameters
+    red = 'mean'  # Loss reduction (sum or mean)
+    if red != "mean":
+        raise NotImplementedError("reduction must be mean in distillation mode!")
 
-    lcls, lbox, lobj, ll1 = ft([0]), ft([0]), ft([0]), ft([0])
+    DboxLoss = nn.MSELoss(reduction="none")
+    DclsLoss = nn.MSELoss(reduction="none")
+    DobjLoss = nn.MSELoss(reduction="none")
+    # per output
+    for i, pi in enumerate(p):  # layer index, layer predictions
+        t_pi = t_p[i]
+        t_obj_scale = t_pi[..., 4].sigmoid()
+
+        # BBox
+        b_obj_scale = t_obj_scale.unsqueeze(-1).repeat(1, 1, 1, 1, 4)
+        t_lbox += torch.mean(DboxLoss(pi[..., :4], t_pi[..., :4]) * b_obj_scale)
+
+        # Class
+        if model.nc > 1:  # cls loss (only if multiple classes)
+            c_obj_scale = t_obj_scale.unsqueeze(-1).repeat(1, 1, 1, 1, model.nc)
+            # t_lcls += torch.mean(c_obj_scale * (pi[..., 5:] - t_pi[..., 5:]) ** 2)
+            t_lcls += torch.mean(DclsLoss(pi[..., 5:], t_pi[..., 5:]) * c_obj_scale)
+
+        # t_lobj += torch.mean(t_obj_scale * (pi[..., 4] - t_pi[..., 4]) ** 2)
+        t_lobj += torch.mean(DobjLoss(pi[..., 4], t_pi[..., 4]) * t_obj_scale)
+    t_lbox *= h['giou'] * h['dist']
+    t_lobj *= h['obj'] * h['dist']
+    t_lcls *= h['cls'] * h['dist']
+    bs = p[0].shape[0]  # batch size
+    loss += (t_lobj + t_lbox + t_lcls) * bs
+    return loss
+
+
+def compute_loss(p, targets, model):  # predictions, targets, model
+    ft = torch.cuda.FloatTensor if p[0].is_cuda else torch.Tensor
+    lcls, lbox, lobj = ft([0]), ft([0]), ft([0])
     tcls, tbox, indices, anchors = build_targets(p, targets, model)  # targets
     h = model.hyp  # hyperparameters
     red = 'mean'  # Loss reduction (sum or mean)
@@ -445,11 +489,6 @@ def compute_loss(p, targets, model, prunable_modules=None, t_p=None):  # predict
     # per output
     nt = 0  # targets
     for i, pi in enumerate(p):  # layer index, layer predictions
-
-        if t_p is not None:
-            t_pi = t_p[i]
-            t_obj_scale = t_pi[..., 4].sigmoid()
-
         b, a, gj, gi = indices[i]  # image, anchor, gridy, gridx
         tobj = torch.zeros_like(pi[..., 0])  # target obj
 
@@ -469,16 +508,6 @@ def compute_loss(p, targets, model, prunable_modules=None, t_p=None):  # predict
                 giou = bbox_iou(pbox.t(), tbox[i], x1y1x2y2=False, CIoU=True)  # giou(prediction, target)
                 lbox += (1.0 - giou).sum() if red == 'sum' else (1.0 - giou).mean()  # giou loss
 
-            if t_p is not None:
-                if red != "mean":
-                    raise NotImplementedError("reduction must be mean in distillation mode!")
-                b_obj_scale = t_obj_scale.unsqueeze(-1).repeat(1, 1, 1, 1, 4)
-                # sub = (pi[..., :4] - t_pi[..., :4]) ** 2
-                # s_sub = b_obj_scale * sub
-                # m_sub = torch.mean(s_sub)
-                # t_lobj += m_sub
-                t_lbox += torch.mean(b_obj_scale * ((pi[..., :4] - t_pi[..., :4]) ** 2))
-
             # Obj
             tobj[b, a, gj, gi] = (1.0 - model.gr) + model.gr * giou.detach().clamp(0).type(tobj.dtype)  # giou ratio
 
@@ -488,43 +517,18 @@ def compute_loss(p, targets, model, prunable_modules=None, t_p=None):  # predict
                 t[range(nb), tcls[i]] = cp
                 lcls += BCEcls(ps[:, 5:], t)  # BCE
 
-                if t_p is not None:
-                    if red != "mean":
-                        raise NotImplementedError("reduction must be mean in distillation mode!")
-                    c_obj_scale = t_obj_scale.unsqueeze(-1).repeat(1, 1, 1, 1, model.nc)
-                    t_lcls += torch.mean(c_obj_scale * (pi[..., 5:] - t_pi[..., 5:]) ** 2)
-
             # Append targets to text file
             # with open('targets.txt', 'a') as file:
             #     [file.write('%11.5g ' * 4 % tuple(x) + '\n') for x in torch.cat((txy[i], twh[i]), 1)]
 
         lobj += BCEobj(pi[..., 4], tobj)  # obj loss
 
-        if t_p is not None:
-            if red != "mean":
-                raise NotImplementedError("reduction must be mean in distillation mode!")
-            t_lobj += torch.mean(t_obj_scale * (pi[..., 4] - t_pi[..., 4]) ** 2)
-
-    if prunable_modules is not None:
-        for m in prunable_modules:
-            ll1 += m.weight.norm(1)
-        ll1 /= len(prunable_modules)
-
     lbox *= h['giou']
     lobj *= h['obj']
     lcls *= h['cls']
 
-    if t_p is not None:
-        t_lbox *= h['giou'] * h['dist']
-        t_lobj *= h['obj'] * h['dist']
-        t_lcls *= h['cls'] * h['dist']
-
-    if prunable_modules is not None:
-        ll1 *= h['sl']
     bs = tobj.shape[0]  # batch size
     if red == 'sum':
-        if prunable_modules is not None or t_p is not None:
-            raise NotImplementedError("reduction must be mean in pruning or distillation mode!")
         g = 3.0  # loss gain
         lobj *= g / bs
         if nt:
@@ -532,11 +536,6 @@ def compute_loss(p, targets, model, prunable_modules=None, t_p=None):  # predict
             lbox *= g / nt
 
     loss = lbox + lobj + lcls
-    if t_p is not None:
-        loss += t_lobj + t_lobj + lcls
-    if prunable_modules is not None:
-        loss += ll1
-        return loss * bs, torch.cat((lbox, lobj, lcls, ll1, loss)).detach()
     return loss * bs, torch.cat((lbox, lobj, lcls, loss)).detach()
 
 

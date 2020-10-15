@@ -274,12 +274,9 @@ def train(hyp):
             w = model.class_weights.cpu().numpy() * (1 - maps) ** 2  # class weights
             image_weights = labels_to_image_weights(dataset.labels, nc=nc, class_weights=w)
             dataset.indices = random.choices(range(dataset.n), weights=image_weights, k=dataset.n)  # rand weighted idx
-        if opt.sl > 0:
-            mloss = torch.zeros(5, device=device)  # mean losses
-            print(('\n' + '%10s' * 9) % ('Epoch', 'gpu_mem', 'GIoU', 'obj', 'cls', 'l1', 'total', 'targets', 'img_size'))
-        else:
-            mloss = torch.zeros(4, device=device)  # mean losses
-            print(('\n' + '%10s' * 8) % ('Epoch', 'gpu_mem', 'GIoU', 'obj', 'cls', 'total', 'targets', 'img_size'))
+
+        mloss = torch.zeros(4, device=device)  # mean losses
+        print(('\n' + '%10s' * 8) % ('Epoch', 'gpu_mem', 'GIoU', 'obj', 'cls', 'total', 'targets', 'img_size'))
         pbar = tqdm(enumerate(dataloader), total=nb)  # progress bar
         for i, (imgs, targets, paths, _) in pbar:  # batch -------------------------------------------------------------
             ni = i + nb * epoch  # number integrated batches (since train start)
@@ -311,15 +308,15 @@ def train(hyp):
                     t_pred = t_model(imgs)
 
             # Loss
+            loss, loss_items = compute_loss(pred, targets.to(device), model)
+
+            # Sparse Learning
             if opt.sl > 0:
-                # Sparse Learning
-                loss, loss_items = compute_loss(pred, targets.to(device), model, prunable_modules)
-            else:
-                if opt.dist:
-                    # distillation
-                    loss, loss_items = compute_loss(pred, targets.to(device), model, t_p=t_pred)
-                else:
-                    loss, loss_items = compute_loss(pred, targets.to(device), model)
+                loss = compute_pruning_loss(pred, prunable_modules, model, loss)
+
+            # distillation
+            if opt.dist:
+                loss = compute_distillation_loss(pred, t_pred, model, loss)
 
             if not torch.isfinite(loss):
                 print('WARNING: non-finite loss, ending training ', loss_items)
@@ -341,12 +338,8 @@ def train(hyp):
             # Print
             mloss = (mloss * i + loss_items) / (i + 1)  # update mean losses
             mem = '%.3gG' % (torch.cuda.memory_cached() / 1E9 if torch.cuda.is_available() else 0)  # (GB)
-            if opt.sl > 0:
-                s = ('%10s' * 2 + '%10.4g' * 7) % (
-                    '%g/%g' % (epoch, epochs - 1), mem, *mloss, targets.shape[0], imgs.shape[-1])
-            else:
-                s = ('%10s' * 2 + '%10.4g' * 6) % (
-                    '%g/%g' % (epoch, epochs - 1), mem, *mloss, targets.shape[0], imgs.shape[-1])
+            s = ('%10s' * 2 + '%10.4g' * 6) % (
+                '%g/%g' % (epoch, epochs - 1), mem, *mloss, targets.shape[0], imgs.shape[-1])
             pbar.set_description(s)
 
             # Plot
@@ -383,18 +376,11 @@ def train(hyp):
 
         # Tensorboard
         if tb_writer:
-            if opt.sl > 0:
-                tags = ['train/giou_loss', 'train/obj_loss', 'train/cls_loss', 'train/l1_loss',
-                        'metrics/precision', 'metrics/recall', 'metrics/mAP_0.5', 'metrics/F1',
-                        'val/giou_loss', 'val/obj_loss', 'val/cls_loss']
-                for x, tag in zip(list(mloss[:-1]) + list(results), tags):
-                    tb_writer.add_scalar(tag, x, epoch)
-            else:
-                tags = ['train/giou_loss', 'train/obj_loss', 'train/cls_loss',
-                        'metrics/precision', 'metrics/recall', 'metrics/mAP_0.5', 'metrics/F1',
-                        'val/giou_loss', 'val/obj_loss', 'val/cls_loss']
-                for x, tag in zip(list(mloss[:-1]) + list(results), tags):
-                    tb_writer.add_scalar(tag, x, epoch)
+            tags = ['train/giou_loss', 'train/obj_loss', 'train/cls_loss',
+                    'metrics/precision', 'metrics/recall', 'metrics/mAP_0.5', 'metrics/F1',
+                    'val/giou_loss', 'val/obj_loss', 'val/cls_loss']
+            for x, tag in zip(list(mloss[:-1]) + list(results), tags):
+                tb_writer.add_scalar(tag, x, epoch)
 
         # Update best mAP
         fi = fitness(np.array(results).reshape(1, -1))  # fitness_i = weighted combination of [P, R, mAP, F1]
@@ -474,6 +460,15 @@ if __name__ == '__main__':
         opt.cfg = 'models/yolov5s_voc.yaml'
         opt.data = "data/voc.yaml"
         opt.weights = "/data/checkpoints/yolov5/yolov5s.pt"
+        opt.name = opt.type
+        opt.epochs = 50
+        opt.batch_size = 24
+        opt.multi_scale = False
+
+    if opt.type == "vocl":
+        opt.cfg = 'models/yolov5l_voc.yaml'
+        opt.data = "data/voc.yaml"
+        opt.weights = "/data/checkpoints/yolov5/yolov5l.pt"
         opt.name = opt.type
         opt.epochs = 50
         opt.batch_size = 24
