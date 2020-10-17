@@ -2,12 +2,12 @@
 channel pruning and distillation for mobile-yolov5 (applied to android)
 
 ## Background
-yolov5s的计算量和参数量分别为8.39G和7.07M。部署在android上的推理速度仍然有提升。本项目主要从模型端入手，通过替换backbone(mobilenetv2)，通道剪枝对模型进行压缩。
+yolov5s的计算量和参数量分别为8.39G和7.07M。部署在android上的推理速度仍然有提升的空间。本项目主要从模型端入手，通过替换backbone(mobilenetv2)，通道剪枝对模型进行压缩。
 利用yolov5对剪枝后的模型进行蒸馏finetune。
 
 ## Baseline
-数据集采用Pascal VOC，trainset = train2007+train2012+val2007+val2012，testset = test2007，Baseline采用mobile-yolo（imagenet预训练） <br>
-如果未经特殊说明则均为使用默认参数，batchsize=24，epoch=50，train_size = 640，test_size = 640<br>
+数据集采用Pascal VOC，trainset = train2007+train2012+val2007+val2012，testset = test2007，Baseline采用mobile-yolo（imagenet预训练）第一个模块采用Focus <br>
+如果未经特殊说明则均为使用默认参数，batchsize=24，epoch=50，train_size = 640，test_size = 640，conf_thres=0.001，iou_thres=0.6，mAP均为50<br>
 PS. 由于资源有限，此项目只训练50个epoch，实际上可以通过调整学习率和迭代次数进一步提高mAP。但是可以通过控制相同的超参数来进行实验对比，所以并不影响最终结果。<br>
 
 baseline由4个部分组成：yolov5s，官方提供的coco权重在voc上进行微调所以不具备可比性，但是可以作为蒸馏指导模型；mobilev2-yolo5s和mobilev2-yolo5l均是只更改了对应的backbone；mobilev2-yolo3则是用的yolo3head，结构同[https://github.com/Adamdad/keras-YOLOv3-mobilenet](https://github.com/Adamdad/keras-YOLOv3-mobilenet)
@@ -16,13 +16,14 @@ baseline由4个部分组成：yolov5s，官方提供的coco权重在voc上进行
 |Model|Precision|Recall|mAP|Params(M)|Flops(G)|
 |----|----|----|----|----|----|
 |yolo5s|0.536|0.863|0.809|7.07|8.39|
-|mobilev2-yolo3|0.458|0.838|0.755|22.05|19.65|
 |mobilev2-yolo5l|0.496|0.807|0.741|15.38|16.72|
+|mobilev2-yolo3|0.458|0.838|0.755|22.05|19.65|
 |mobilev2-yolo5s|0.457|0.809|0.719|3.62|4.72|
 
 由于yolo5s用了coco权重，实际上是不具备可比性的，然而我们可以利用他作为Teacher模型对小模型进行蒸馏。mobilev2-yolo3是验证github上[keras版本](https://github.com/Adamdad/keras-YOLOv3-mobilenet)
 在此项目中的表现，忽略一些不同的超参选择，mAP在一个点之内是可以接受的。不过mobilev2-yolo3的参数量和计算量还是太大了（主要是head的branch），
 于是用yolo5的head构建了mobilev2-yolo5l和mobilev2-yolo5s。可以看出随着参数量和计算量的下降，mAP也是在非线性下降。
+而yolov5独有的focus模块表现并不好，对精度基本上没有任何影响，反而还提升了模型计算量。
 
 ## Pruning
 从baseline中可以看出mobilev2-yolo5s整体的计算量已经很少了，不过在追求高性能的路上还是有压缩的空间的。
@@ -90,6 +91,27 @@ python3 test.py --weights 权重路径
 ## Inference with TensorRT
 1. python3 model/onnx_export.py --weights weight_path
 2. 参考[https://github.com/Syencil/tensorRT](https://github.com/Syencil/tensorRT)
+
+## Inference with Ncnn
+### Rethinking
+1. 在将onnx转换为ncnn格式的时候，发现focus模块的slice无法直接转换。发现是step=2的原因。
+针对这个问题，有3个方案：用4个原图叠加然后推理；用Conv代替Focus重新训一个；修改ncnn的代码迫使其支持step!=1的slice操作。
+    - 在[https://github.com/sunnyden/YOLOV5_NCNN_Android/issues/2](https://github.com/sunnyden/YOLOV5_NCNN_Android/issues/2)中直接将4个原图叠在一起。这看起来很方便，实际上是将输入图像大小扩大了一倍。为了弥补计算量上的增多只能原图输入尺寸降成原来的一半，带来的就是精度的损失。
+    - 如果在ncnn中实现的话，单纯实现step=2的Slice操作对性能影响很大（内存不连续）所以需要将整个focus模块拿出来实现，这样onnx的导出部分也得改.
+    - 用Conv重新训练一个模型，从以上实验可以看出Conv替换Focus之后精度并没有任何变化（0.1这种算正常扰动），计算量和参数量反而小了。
+
+|Model|Precision|Recall|mAP|Params(M)|Flops(G)|
+|----|----|----|----|----|----|
+|mobilev2-yolo3(conv)|0.462|0.838|0.756|22.05|19.38|
+|mobilev2-yolo3(focus)|0.458|0.838|0.755|22.05|19.65|
+|mobilev2-yolo5s(conv)|0.423|0.819|0.718|3.61|4.46|
+|mobilev2-yolo5s(focus)|0.457|0.809|0.719|3.62|4.72|
+|S-mobilev2-yolo5s(conv)|0.333|0.866|0.744|3.61|4.46|
+|S-mobilev2-yolo5s(focus)|0.296|0.876|0.746|3.62|4.72|
+
+
+其中focus代表第一个模块采用yolov5的focus模块，conv则是采用stride=2的3x3卷积作为第一个模块。
+根据以上结论，我们采用重新训练了一个模型，并进行蒸馏得到S-mobilev2-yolo5s(conv)。利用onnx2ncnn将其转换并部署到android
 
 ## Reference
 1. [https://github.com/ultralytics/yolov5](https://github.com/ultralytics/yolov5)

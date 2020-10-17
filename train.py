@@ -475,7 +475,7 @@ if __name__ == '__main__':
         opt.multi_scale = False
 
     if opt.type == "mvocs":
-        opt.cfg = 'models/mobile-yolo5s.yaml'
+        opt.cfg = 'models/mobile-yolo5s_voc.yaml'
         opt.data = "data/voc.yaml"
         opt.weights = "/root/.cache/torch/checkpoints/mobilenet_v2-b0353104.pth"
         opt.name = opt.type

@@ -12,7 +12,7 @@ anchors:
 # yolov5 backbone
 backbone:
   # [from, number, module, args]
-  [[-1, 1, Focus, [16, 3]],  # 0-P1/2 32x320x320
+  [[-1, 1, Conv, [32, 3, 2]],  # 0-P1/2 32x320x320
    [-1, 1, InvertedResidual, [16, 1, 1]],  # 1         16x320x320
    [-1, 1, InvertedResidual, [24, 2, 6]],  # 2-P2/4   24x160x160
    [-1, 1, InvertedResidual, [24, 1, 6]],  # 3-P2/4   24x160x160
