@@ -1,0 +1,53 @@
+# parameters
+nc: 80  # number of classes
+depth_multiple: 1  # model depth multiple
+width_multiple: 1  # layer channel multiple
+
+# anchors
+anchors:
+  - [10,13, 16,30, 33,23]  # P3/8
+  - [30,61, 62,45, 59,119]  # P4/16
+  - [116,90, 156,198, 373,326]  # P5/32
+
+# yolov5 backbone
+backbone:
+  # [from, number, module, args]
+  [[-1, 1, Conv, [32, 3, 2]],  # 0-P1/2 32x320x320
+   [-1, 1, InvertedResidual, [16, 1, 1]],  # 1         16x320x320
+   [-1, 1, InvertedResidual, [24, 2, 6]],  # 2-P2/4   24x160x160
+   [-1, 1, InvertedResidual, [24, 1, 6]],  # 3-P2/4   24x160x160
+   [-1, 1, InvertedResidual, [32, 2, 6]],  # 4-P3/8   32x80x80
+   [-1, 1, InvertedResidual, [32, 1, 6]],  # 5-P3/8   32x80x80
+   [-1, 1, InvertedResidual, [32, 1, 6]],  # 6-P3/8   32x80x80
+   [-1, 1, InvertedResidual, [64, 2, 6]],  # 7-P4/16  64x40x40
+   [-1, 1, InvertedResidual, [64, 1, 6]],  # 8-P4/16  64x40x40
+   [-1, 1, InvertedResidual, [64, 1, 6]],  # 9-P4/16  64x40x40
+   [-1, 1, InvertedResidual, [64, 1, 6]],  # 10-P4/16 64x40x40
+   [-1, 1, InvertedResidual, [96, 1, 6]],  # 11       96X40X40
+   [-1, 1, InvertedResidual, [96, 1, 6]],  # 12       96X40X40
+   [-1, 1, InvertedResidual, [96, 1, 6]],  # 13       96X40X40
+   [-1, 1, InvertedResidual, [160, 2, 6]], # 14-P5/32  160X20X20
+   [-1, 1, InvertedResidual, [160, 1, 6]], # 15-P5/32  160X20X20
+   [-1, 1, InvertedResidual, [160, 1, 6]], # 16-P5/32  160X20X20
+   [-1, 1, InvertedResidual, [320, 1, 6]],  # 17       320X20X20
+  ]
+
+# yolov5 head
+head:
+  [[-1, 1, BottleneckCSP, [512, False]],  # 11  320X20X20
+   [-1, 1, nn.Conv2d, [na * (nc + 5), 1, 1]],  # 12 (P5/32-large)  75X20X20
+
+   [-2, 1, nn.Upsample, [None, 2, 'nearest']],  # 320X40X40
+   [[-1, 13], 1, Concat, [1]],  # cat backbone P4
+   [-1, 1, Conv, [256, 1, 1]],
+   [-1, 1, BottleneckCSP, [256, False]],
+   [-1, 1, nn.Conv2d, [na * (nc + 5), 1, 1]],  # 17 (P4/16-medium)
+
+   [-2, 1, nn.Upsample, [None, 2, 'nearest']],
+   [[-1, 6], 1, Concat, [1]],  # cat backbone P3
+   [-1, 1, Conv, [128, 1, 1]],
+   [-1, 1, BottleneckCSP, [128, False]],
+   [-1, 1, nn.Conv2d, [na * (nc + 5), 1, 1]],  # 22 (P3/8-small)
+
+   [[], 1, Detect, [nc, anchors]],  # Detect(P3, P4, P5)
+  ]

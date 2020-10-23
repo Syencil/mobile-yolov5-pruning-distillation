@@ -15,6 +15,7 @@ baseline由4个部分组成：yolov5s，官方提供的coco权重在voc上进行
 
 |Model|Precision|Recall|mAP|Params(M)|Flops(G)|
 |----|----|----|----|----|----|
+|yolo5l|0.659|0.881|0.862|49.90|57.52|
 |yolo5s|0.536|0.863|0.809|7.07|8.39|
 |mobilev2-yolo5l|0.496|0.807|0.741|15.38|16.72|
 |mobilev2-yolo3|0.458|0.838|0.755|22.05|19.65|
@@ -53,16 +54,22 @@ baseline由4个部分组成：yolov5s，官方提供的coco权重在voc上进行
 此时剪枝过后的mAP已经超过稀疏训练的baseline了。不过不排除是因为多训练了20个epoch的原因。
 
 ## Distillation
-我们仍然以mobilev2-yolo5s作为S模型，选取基于darknet为backbone的yolo5s作为T模型。这样能尽可能的保证结构上的一致。而yolo5s的参数量和计算量差不多正好是mobilev2-yolo5s的两倍，
-capacity gap并不是很明显。我们希望能将yolo5s在coco上学习到的知识蒸馏到mobilev2-yolo5s中。
-以[Object detection at 200 Frames Per Second](https://arxiv.org/abs/1805.06361)为基础方法配置蒸馏损失函数，抑制背景框带来的类别不均衡问题。
-1. 我们用L2 loss作为蒸馏基础函数。损失中的蒸馏dist平衡系数选择为1，蒸馏后提了接近3个点。
-
+我们以mobilev2-yolo5s作为S-model，希望能将T-model在coco和voc上学习到的知识蒸馏到mobilev2-yolo5s中。以[Object detection at 200 Frames Per Second](https://arxiv.org/abs/1805.06361)为基础方法配置蒸馏损失函数，抑制背景框带来的类别不均衡问题。
+用L2 loss作为蒸馏基础函数。损失中的蒸馏dist平衡系数选择为1。
+1. 选取基于darknet为backbone的yolo5s作为T模型。这样能尽可能的保证结构上的一致。而yolo5s的参数量和计算量差不多正好是mobilev2-yolo5s的两倍，
+capacity gap并不是很明显。蒸馏后提了接近3个点。
 |Model|Precision|Recall|mAP|Params(M)|Flops(G)|
 |----|----|----|----|----|----|
 |T-yolo5s|0.536|0.863|0.809|7.07|8.39|
 |mobilev2-yolo5s|0.457|0.809|0.719|3.62|4.72|
 |S-mobilev2-yolo5s|0.296|0.876|0.746|3.62|4.72|
+
+2. 选取yolo5l作为T模型，精度更高，但是gap更大，可以看到蒸馏后提升很少。
+|Model|Precision|Recall|mAP|Params(M)|Flops(G)|
+|----|----|----|----|----|----|
+|T-yolo5l|0.659|0.881|0.862|49.90|57.52|
+|mobilev2-yolo5s|0.457|0.809|0.719|3.62|4.72|
+|S-mobilev2-yolo5s|0.233|0.879|0.724|3.62|4.72|
 
 ## Quick Start
 ### Baseline
@@ -109,11 +116,12 @@ python3 test.py --weights 权重路径
 |S-mobilev2-yolo5s(conv)|0.333|0.866|0.744|3.61|4.46|
 |S-mobilev2-yolo5s(focus)|0.296|0.876|0.746|3.62|4.72|
 
-
 其中focus代表第一个模块采用yolov5的focus模块，conv则是采用stride=2的3x3卷积作为第一个模块。
 根据以上结论，我们采用重新训练了一个模型，并进行蒸馏得到S-mobilev2-yolo5s(conv)。利用onnx2ncnn将其转换并部署到android
+
+2. TnesorRT中的tensor内存是连续模型，然而在ncnn中采用腾讯自己的mat格式，并不能保证channel之间的内存是连续性的
 
 ## Reference
 1. [https://github.com/ultralytics/yolov5](https://github.com/ultralytics/yolov5)
 2. [https://github.com/VainF/Torch-Pruning](https://github.com/VainF/Torch-Pruning)
-
+3. [https://github.com/Syencil/tensorRT](https://github.com/Syencil/tensorRT)

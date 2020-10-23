@@ -192,6 +192,8 @@ def train(hyp):
                                 world_size=1,  # number of nodes
                                 rank=0)  # node rank
         model = torch.nn.parallel.DistributedDataParallel(model)
+        if opt.dist:
+            raise NotImplementedError("Distillation do not support DDP!")
 
     # Dataset
     dataset = LoadImagesAndLabels(train_path, imgsz, batch_size,
@@ -441,7 +443,7 @@ if __name__ == '__main__':
     parser.add_argument('--evolve', action='store_true', help='evolve hyperparameters')
     parser.add_argument('--bucket', type=str, default='', help='gsutil bucket')
     parser.add_argument('--cache-images', action='store_true', help='cache images for faster training')
-    parser.add_argument('--weights', default="/data/checkpoints/yolov5/yolov5x.pt", type=str, help='initial weights path')
+    parser.add_argument('--weights', type=str, help='initial weights path')
     parser.add_argument('--name', default='', help='renames results.txt to results_name.txt if supplied')
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--adam', action='store_true', help='use adam optimizer')
@@ -456,7 +458,28 @@ if __name__ == '__main__':
     parser.add_argument('--t_weights', type=str, help='teacher model for distillation')
     opt = parser.parse_args()
 
-    if opt.type == "voc":
+    if opt.type == "mcocos":
+        opt.cfg = 'models/mobile-yolo5s.yaml'
+        opt.data = "data/coco.yaml"
+        opt.weights = "outputs/dmvocs/weights/best_dmvocs.pt"
+        opt.name = opt.type
+        opt.epochs = 50
+        opt.batch_size = 24
+        opt.multi_scale = False
+
+    if opt.type == "dmcocos":
+        opt.cfg = 'models/mobile-yolo5s.yaml'
+        opt.data = "data/coco.yaml"
+        opt.name = opt.type
+        opt.weights = "outputs/dmvocs/weights/best_dmvocs.pt"
+        opt.epochs = 50
+        opt.batch_size = 24
+        opt.multi_scale = False
+        opt.dist = True
+        opt.t_weights = "/data/checkpoints/yolov5/yolov5s.pt"
+        hyp["dist"] = 1
+
+    if opt.type == "vocs":
         opt.cfg = 'models/yolov5s_voc.yaml'
         opt.data = "data/voc.yaml"
         opt.weights = "/data/checkpoints/yolov5/yolov5s.pt"
@@ -467,6 +490,15 @@ if __name__ == '__main__':
 
     if opt.type == "vocl":
         opt.cfg = 'models/yolov5l_voc.yaml'
+        opt.data = "data/voc.yaml"
+        opt.weights = "/data/checkpoints/yolov5/yolov5l.pt"
+        opt.name = opt.type
+        opt.epochs = 50
+        opt.batch_size = 24
+        opt.multi_scale = False
+
+    if opt.type == "vocx":
+        opt.cfg = 'models/yolov5x_voc.yaml'
         opt.data = "data/voc.yaml"
         opt.weights = "/data/checkpoints/yolov5/yolov5l.pt"
         opt.name = opt.type
@@ -542,6 +574,18 @@ if __name__ == '__main__':
         opt.multi_scale = False
         opt.dist = True
         opt.t_weights = "outputs/voc/weights/best_voc.pt"
+        hyp["dist"] = 1
+
+    if opt.type == "dmvocs_l":
+        opt.cfg = 'models/mobile-yolo5s_voc.yaml'
+        opt.data = "data/voc.yaml"
+        opt.name = opt.type
+        opt.weights = "/root/.cache/torch/checkpoints/mobilenet_v2-b0353104.pth"
+        opt.epochs = 50
+        opt.batch_size = 24
+        opt.multi_scale = False
+        opt.dist = True
+        opt.t_weights = "outputs/vocl/weights/best_vocl.pt"
         hyp["dist"] = 1
 
     if opt.nw is None:
