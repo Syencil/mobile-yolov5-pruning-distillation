@@ -17,8 +17,8 @@ baseline由4个部分组成：yolov5s，官方提供的coco权重在voc上进行
 |----|----|----|----|----|----|
 |yolo5l|0.659|0.881|0.862|49.90|57.52|
 |yolo5s|0.536|0.863|0.809|7.07|8.39|
-|mobilev2-yolo5l|0.496|0.807|0.741|15.38|16.72|
 |mobilev2-yolo3|0.458|0.838|0.755|22.05|19.65|
+|mobilev2-yolo5l|0.496|0.807|0.741|15.38|16.72|
 |mobilev2-yolo5s|0.457|0.809|0.719|3.62|4.72|
 
 由于yolo5s用了coco权重，实际上是不具备可比性的，然而我们可以利用他作为Teacher模型对小模型进行蒸馏。mobilev2-yolo3是验证github上[keras版本](https://github.com/Adamdad/keras-YOLOv3-mobilenet)
@@ -58,6 +58,7 @@ baseline由4个部分组成：yolov5s，官方提供的coco权重在voc上进行
 用L2 loss作为蒸馏基础函数。损失中的蒸馏dist平衡系数选择为1。
 1. 选取基于darknet为backbone的yolo5s作为T模型。这样能尽可能的保证结构上的一致。而yolo5s的参数量和计算量差不多正好是mobilev2-yolo5s的两倍，
 capacity gap并不是很明显。蒸馏后提了接近3个点。
+
 |Model|Precision|Recall|mAP|Params(M)|Flops(G)|
 |----|----|----|----|----|----|
 |T-yolo5s|0.536|0.863|0.809|7.07|8.39|
@@ -65,6 +66,7 @@ capacity gap并不是很明显。蒸馏后提了接近3个点。
 |S-mobilev2-yolo5s|0.296|0.876|0.746|3.62|4.72|
 
 2. 选取yolo5l作为T模型，精度更高，但是gap更大，可以看到蒸馏后提升很少。
+
 |Model|Precision|Recall|mAP|Params(M)|Flops(G)|
 |----|----|----|----|----|----|
 |T-yolo5l|0.659|0.881|0.862|49.90|57.52|
@@ -119,7 +121,11 @@ python3 test.py --weights 权重路径
 其中focus代表第一个模块采用yolov5的focus模块，conv则是采用stride=2的3x3卷积作为第一个模块。
 根据以上结论，我们采用重新训练了一个模型，并进行蒸馏得到S-mobilev2-yolo5s(conv)。利用onnx2ncnn将其转换并部署到android
 
-2. TnesorRT中的tensor内存是连续模型，然而在ncnn中采用腾讯自己的mat格式，并不能保证channel之间的内存是连续性的
+2. TnesorRT中的tensor内存是连续模型，然而在ncnn中采用腾讯自己的mat格式，并不能保证channel之间的内存是连续性的。
+这就导致无法按照之前tensorRT的后处理（BHWAC）来进行。在导出的时候尽量保证BCHW的格式，这样在ncnn中没有个channel中的值才是连续的、可解释的。
+
+3. 有一个比较坑的点：由于用的是nn.Upsample进行上采样，在导出为onnx格式的时候，resize操作中只保存了输出outputsize而不是scale。
+这导致在转ncnn的时候，将其转换为Interp操作的时候直接将outputsize固定了。然而Onnx和trt中输入是固定的，在ncnn中是动态尺寸输入，这就会导致m和l的输出大小永远不变。
 
 ## Reference
 1. [https://github.com/ultralytics/yolov5](https://github.com/ultralytics/yolov5)
