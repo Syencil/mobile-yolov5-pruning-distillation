@@ -143,6 +143,18 @@ class Model(nn.Module):
                 m.conv = torch_utils.fuse_conv_and_bn(m.conv, m.bn)  # update conv
                 m.bn = None  # remove batchnorm
                 m.forward = m.fuseforward  # update forward
+            elif type(m) is ConvBNReLU:
+                m[0] = torch_utils.fuse_conv_and_bn(m[0], m[1])
+                m[1] = None
+                m.forward = m.fuseforward
+            elif type(m) is InvertedResidual:
+                if type(m.conv[2]) is nn.BatchNorm2d:
+                    m.conv[1] = torch_utils.fuse_conv_and_bn(m.conv[1], m.conv[2])
+                    m.conv[2] = None
+                else:
+                    m.conv[2] = torch_utils.fuse_conv_and_bn(m.conv[2], m.conv[3])
+                    m.conv[3] = None
+                m.forward = m.fuseforward
         torch_utils.model_info(self)
 
 

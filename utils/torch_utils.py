@@ -76,6 +76,7 @@ def fuse_conv_and_bn(conv, bn):
         # init
         fusedconv = torch.nn.Conv2d(conv.in_channels,
                                     conv.out_channels,
+                                    groups=conv.groups,
                                     kernel_size=conv.kernel_size,
                                     stride=conv.stride,
                                     padding=conv.padding,

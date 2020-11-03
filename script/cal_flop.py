@@ -25,6 +25,7 @@ if __name__ == '__main__':
         model = model["model"]
     model.float()
     model.eval()
+    model.fuse()
     macs, params = profile(model, inputs=(img, ))
 
     print("Model ===> ", opt.weights)

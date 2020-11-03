@@ -1,5 +1,7 @@
 # mobile-yolov5-pruning-distillation
-channel pruning and distillation for mobile-yolov5 (applied to android)
+channel pruning and distillation for mobilev2-yolov5s<br>
+TensorRT Version ===> [https://github.com/Syencil/tensorRT](https://github.com/Syencil/tensorRT)<br>
+Android Version ===> [https://github.com/Syencil/ncnn-android-projects](https://github.com/Syencil/ncnn-android-projects)
 
 ## Background
 yolov5s的计算量和参数量分别为8.39G和7.07M。部署在android上的推理速度仍然有提升的空间。本项目主要从模型端入手，通过替换backbone(mobilenetv2)，通道剪枝对模型进行压缩。
@@ -17,9 +19,9 @@ baseline由4个部分组成：yolov5s，官方提供的coco权重在voc上进行
 |----|----|----|----|----|----|
 |yolo5l|0.659|0.881|0.862|49.90|57.52|
 |yolo5s|0.536|0.863|0.809|7.07|8.39|
-|mobilev2-yolo3|0.458|0.838|0.755|22.05|19.65|
-|mobilev2-yolo5l|0.496|0.807|0.741|15.38|16.72|
-|mobilev2-yolo5s|0.457|0.809|0.719|3.62|4.72|
+|mobilev2-yolo3|0.458|0.838|0.755|22.03|19.58|
+|mobilev2-yolo5l|0.496|0.807|0.741|15.36|16.65|
+|mobilev2-yolo5s|0.457|0.809|0.719|3.60|4.67|
 
 由于yolo5s用了coco权重，实际上是不具备可比性的，然而我们可以利用他作为Teacher模型对小模型进行蒸馏。mobilev2-yolo3是验证github上[keras版本](https://github.com/Adamdad/keras-YOLOv3-mobilenet)
 在此项目中的表现，忽略一些不同的超参选择，mAP在一个点之内是可以接受的。不过mobilev2-yolo3的参数量和计算量还是太大了（主要是head的branch），
@@ -35,23 +37,20 @@ baseline由4个部分组成：yolov5s，官方提供的coco权重在voc上进行
 
 |Model|Precision|Recall|mAP|ex-epoch|sl|Prune_prob|Params(M)|Flops(G)|
 |----|----|----|----|----|----|----|----|----|
-|mobilev2-yolo5s|0.457|0.809|0.719|-|-|-|3.62|4.72|
-|mobilev2-yolo5s|0.407|0.793|0.687|-|6e-4|-|3.62|4.72|
-|pruning 1|0.427|0.695|0.604|10|6e-4|thres=0.01|2.7|3.84|
-|pruning 2|0.384|0.821|0.699|20|6e-4|thres=0.01|2.7|3.84|
-|pruning 3|0.337|0.704|0.555|20|6e-4|0.5|1.88|3.08|
+|mobilev2-yolo5s|0.457|0.809|0.719|-|-|-|3.60|4.67|
+|mobilev2-yolo5s|0.407|0.793|0.687|-|6e-4|-|3.60|4.67|
+|pruning 1|0.427|0.695|0.604|10|6e-4|thres=0.01|2.69|3.79|
+|pruning 2|0.384|0.821|0.699|20|6e-4|thres=0.01|2.69|3.79|
+|pruning 3|0.337|0.704|0.555|20|6e-4|0.5|1.87|3.04|
 
 ### Pruning Experiment
 1. 先从头训练一个baseline，以及训练一个对bn中gamma参数加入L1正则化的网络。稀疏参数为sl=6e-4。结果比baseline掉了3个点。
 2. 剪枝策略按照论文中的做法给定一个稀疏率，统计所有参与剪枝层的bn参数l1值并进行排序，依据稀疏率确定阈值。
-3. 将所有小于阈值的层全部减掉，如果有依赖则将依赖的对应部分也剪掉。如果一层中所有的层都需要被移除，那么就保留最大的一层通道(保证网络结构)<br>
-![avatar](./pic/after_pruning_prob_05.jpg)
-
-4. 不过还可以看出一个问题，就是选的0.5稀疏率太大了，把很多并不小的层都剪切掉了。说明我们对应当前sl训练出来的模型，使用0.5的稀疏率不够好，这次我们不按照稀疏率来剪枝，而是给定一个非常小的值0.01。<br>
-![avatar](./pic/after_pruning_thres_001.jpg)
-
+3. 将所有小于阈值的层全部减掉，如果有依赖则将依赖的对应部分也剪掉。如果一层中所有的层都需要被移除，那么就保留最大的一层通道(保证网络结构)
+4. 不过还可以看出一个问题，就是选的0.5稀疏率太大了，把很多并不小的层都剪切掉了。说明我们对应当前sl训练出来的模型，使用0.5的稀疏率不够好，这次我们不按照稀疏率来剪枝，而是给定一个非常小的值0.01。
 5. finetune 10个epoch。mAP是0.604掉点严重，不过注意到是用的cos学习率，在训练末期val acc还在上涨。为了验证是否是finetune训练次数不够，此时尝试训练20个epoch，map果然上升到0.699。
-此时剪枝过后的mAP已经超过稀疏训练的baseline了。不过不排除是因为多训练了20个epoch的原因。
+此时剪枝过后的mAP已经超过稀疏训练的baseline了。不过不排除是因为多训练了20个epoch的原因。<br>
+![avatar](./pic/after_pruning_prob_05.jpg) ![avatar](./pic/after_pruning_thres_001.jpg) 
 
 ## Distillation
 我们以mobilev2-yolo5s作为S-model，希望能将T-model在coco和voc上学习到的知识蒸馏到mobilev2-yolo5s中。以[Object detection at 200 Frames Per Second](https://arxiv.org/abs/1805.06361)为基础方法配置蒸馏损失函数，抑制背景框带来的类别不均衡问题。
@@ -62,16 +61,16 @@ capacity gap并不是很明显。蒸馏后提了接近3个点。
 |Model|Precision|Recall|mAP|Params(M)|Flops(G)|
 |----|----|----|----|----|----|
 |T-yolo5s|0.536|0.863|0.809|7.07|8.39|
-|mobilev2-yolo5s|0.457|0.809|0.719|3.62|4.72|
-|S-mobilev2-yolo5s|0.296|0.876|0.746|3.62|4.72|
+|mobilev2-yolo5s|0.457|0.809|0.719|3.60|4.67|
+|S-mobilev2-yolo5s|0.296|0.876|0.746|3.60|4.67|
 
 2. 选取yolo5l作为T模型，精度更高，但是gap更大，可以看到蒸馏后提升很少。
 
 |Model|Precision|Recall|mAP|Params(M)|Flops(G)|
 |----|----|----|----|----|----|
 |T-yolo5l|0.659|0.881|0.862|49.90|57.52|
-|mobilev2-yolo5s|0.457|0.809|0.719|3.62|4.72|
-|S-mobilev2-yolo5s|0.233|0.879|0.724|3.62|4.72|
+|mobilev2-yolo5s|0.457|0.809|0.719|3.60|4.67|
+|S-mobilev2-yolo5s|0.233|0.879|0.724|3.60|4.67|
 
 ## Quick Start
 ### Baseline
@@ -111,12 +110,12 @@ python3 test.py --weights 权重路径
 
 |Model|Precision|Recall|mAP|Params(M)|Flops(G)|
 |----|----|----|----|----|----|
-|mobilev2-yolo3(conv)|0.462|0.838|0.756|22.05|19.38|
-|mobilev2-yolo3(focus)|0.458|0.838|0.755|22.05|19.65|
-|mobilev2-yolo5s(conv)|0.423|0.819|0.718|3.61|4.46|
-|mobilev2-yolo5s(focus)|0.457|0.809|0.719|3.62|4.72|
-|S-mobilev2-yolo5s(conv)|0.333|0.866|0.744|3.61|4.46|
-|S-mobilev2-yolo5s(focus)|0.296|0.876|0.746|3.62|4.72|
+|mobilev2-yolo3(conv)|0.462|0.838|0.756|22.03|19.32|
+|mobilev2-yolo3(focus)|0.458|0.838|0.755|22.03|19.58|
+|mobilev2-yolo5s(conv)|0.423|0.819|0.718|3.60|4.40|
+|mobilev2-yolo5s(focus)|0.457|0.809|0.719|3.60|4.67|
+|S-mobilev2-yolo5s(conv)|0.333|0.866|0.744|3.60|4.40|
+|S-mobilev2-yolo5s(focus)|0.296|0.876|0.746|3.60|4.67|
 
 其中focus代表第一个模块采用yolov5的focus模块，conv则是采用stride=2的3x3卷积作为第一个模块。
 根据以上结论，我们采用重新训练了一个模型，并进行蒸馏得到S-mobilev2-yolo5s(conv)。利用onnx2ncnn将其转换并部署到android
@@ -127,7 +126,20 @@ python3 test.py --weights 权重路径
 3. 有一个比较坑的点：由于用的是nn.Upsample进行上采样，在导出为onnx格式的时候，resize操作中只保存了输出outputsize而不是scale。
 这导致在转ncnn的时候，将其转换为Interp操作的时候直接将outputsize固定了。然而Onnx和trt中输入是固定的，在ncnn中是动态尺寸输入，这就会导致m和l的输出大小永远不变。
 
+4. 在实际应用中发现，如果只走arm cpu，在P40 pro上size=640分辨率下的mobilev2-yolo5s的FPS最高也就9（所有均算上了前后处理的时间）。
+考虑640的输入大小计算量仍然太大，端上并不需要这么高的推理分辨率，故考虑size=320。此时发现推理FPS可以达到32，不过voc上mAP下降了2.7。
+
+|Model|Precision|Recall|mAP|Params(M)|Flops(G)|
+|----|----|----|----|----|----|
+|mobilev2-yolo5s(640x640)|0.333|0.866|0.744|3.60|4.40|
+|mobilev2-yolo5s(320x320)|0.334|0.811|0.717|3.60|1.10|
+
+### Demon in Android
+具体代码可以参考[android demon](https://github.com/Syencil/ncnn-android-projects)，以下为一些截图示例<br>
+![avatar](./pic/demo1.jpg) ![avatar](./pic/demo2.jpg) ![avatar](./pic/demo3.jpg) ![avatar](./pic/demo4.jpg)
+
 ## Reference
 1. [https://github.com/ultralytics/yolov5](https://github.com/ultralytics/yolov5)
 2. [https://github.com/VainF/Torch-Pruning](https://github.com/VainF/Torch-Pruning)
 3. [https://github.com/Syencil/tensorRT](https://github.com/Syencil/tensorRT)
+4. [https://github.com/Syencil/ncnn-android-projects](https://github.com/Syencil/ncnn-android-projects)

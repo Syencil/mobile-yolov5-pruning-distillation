@@ -16,16 +16,12 @@ class Conv(nn.Module):
         self.conv = nn.Conv2d(c1, c2, k, s, k // 2, groups=g, bias=False)
         self.bn = nn.BatchNorm2d(c2)
         self.act = nn.LeakyReLU(0.1, inplace=True) if act else nn.Identity()
-        self.pruning = pruning
 
     def forward(self, x):
         return self.act(self.bn(self.conv(x)))
 
     def fuseforward(self, x):
         return self.act(self.conv(x))
-
-    def pruning(self):
-        return self.pruning
 
 
 class Bottleneck(nn.Module):
@@ -137,6 +133,13 @@ class ConvBNReLU(nn.Sequential):
             nn.ReLU6(inplace=True)
         )
 
+    def fuseforward(self, input):
+        for module in self:
+            if module is None or type(module) is nn.BatchNorm2d:
+                continue
+            input = module(input)
+        return input
+
 
 class InvertedResidual(nn.Module):
     def __init__(self, inp, oup, stride, expand_ratio):
@@ -161,6 +164,15 @@ class InvertedResidual(nn.Module):
         self.conv = nn.Sequential(*layers)
 
     def forward(self, x):
+        if self.use_res_connect:
+            return x + self.conv(x)
+        else:
+            return self.conv(x)
+
+    def fuseforward(self, x):
+        for i, module in enumerate(self.conv):
+            if module is None or type(module) is nn.BatchNorm2d:
+                del self.conv[i]
         if self.use_res_connect:
             return x + self.conv(x)
         else:
