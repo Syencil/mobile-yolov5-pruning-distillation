@@ -431,7 +431,7 @@ def compute_pruning_loss(p, prunable_modules, model, loss):
     loss += ll1 * bs
     return loss
 
-def compute_distillation_loss(p, t_p, model, loss):
+def compute_distillation_output_loss(p, t_p, model, loss):
     t_ft = torch.cuda.FloatTensor if t_p[0].is_cuda else torch.Tensor
     t_lcls, t_lbox, t_lobj = t_ft([0]), t_ft([0]), t_ft([0])
     h = model.hyp  # hyperparameters
@@ -464,6 +464,25 @@ def compute_distillation_loss(p, t_p, model, loss):
     t_lcls *= h['cls'] * h['dist']
     bs = p[0].shape[0]  # batch size
     loss += (t_lobj + t_lbox + t_lcls) * bs
+    return loss
+
+
+def compute_distillation_feature_loss(s_f, t_f, model, loss):
+    h = model.hyp  # hyperparameters
+    ft = torch.cuda.FloatTensor if s_f[0].is_cuda else torch.Tensor
+    dl = ft([0])
+
+    loss_func1 = nn.MSELoss(reduction="mean")
+    loss_func2 = nn.MSELoss(reduction="mean")
+    loss_func3 = nn.MSELoss(reduction="mean")
+
+    dl += loss_func1(s_f[0], t_f[0])
+    dl += loss_func2(s_f[1], t_f[1])
+    dl += loss_func3(s_f[2], t_f[2])
+
+    bs = s_f[0].shape[0]
+    dl *= h['dist']
+    loss += dl * bs
     return loss
 
 

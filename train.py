@@ -174,6 +174,36 @@ def train(hyp):
         t_model.float()
         t_model.train()
 
+        if opt.d_feature:
+            activation = {}
+            def get_activation(name):
+                def hook(model, inputs, outputs):
+                    activation[name] = outputs
+                return hook
+
+            def get_hooks():
+                hooks = []
+                # S-model
+                hooks.append(model.model._modules["6"].register_forward_hook(get_activation("s_f1")))
+                hooks.append(model.model._modules["13"].register_forward_hook(get_activation("s_f2")))
+                hooks.append(model.model._modules["17"].register_forward_hook(get_activation("s_f3")))
+                # T-model
+                hooks.append(t_model.model._modules["4"].register_forward_hook(get_activation("t_f1")))
+                hooks.append(t_model.model._modules["6"].register_forward_hook(get_activation("t_f2")))
+                hooks.append(t_model.model._modules["10"].register_forward_hook(get_activation("t_f3")))
+                return hooks
+            # feature convert
+            from models.common import Conv
+            Converter_1 = Conv(32, 128)
+            Converter_2 = Conv(96, 256)
+            Converter_3 = Conv(320, 512)
+            Converter_1.to(device)
+            Converter_2.to(device)
+            Converter_3.to(device)
+            Converter_1.train()
+            Converter_2.train()
+            Converter_3.train()
+
     # Mixed precision training https://github.com/NVIDIA/apex
     if mixed_precision:
         model, optimizer = amp.initialize(model, optimizer, opt_level='O1', verbosity=0)
@@ -270,6 +300,8 @@ def train(hyp):
                 prunable_modules.append(m)
     # torch.autograd.set_detect_anomaly(True)
     for epoch in range(start_epoch, epochs):  # epoch ------------------------------------------------------------------
+        if opt.dist and opt.d_feature:
+            hooks = get_hooks()
         model.train()
         # Update image weights (optional)
         if dataset.image_weights:
@@ -308,7 +340,12 @@ def train(hyp):
             if opt.dist:
                 with torch.no_grad():
                     t_pred = t_model(imgs)
-
+                    if opt.d_feature:
+                        d_f1 = Converter_1(activation["s_f1"])
+                        d_f2 = Converter_2(activation["s_f2"])
+                        d_f3 = Converter_3(activation["s_f3"])
+                        s_f = [d_f1, d_f2, d_f3]
+                        t_f = [activation["t_f1"], activation["t_f2"], activation["t_f3"]]
             # Loss
             loss, loss_items = compute_loss(pred, targets.to(device), model)
 
@@ -318,7 +355,9 @@ def train(hyp):
 
             # distillation
             if opt.dist:
-                loss = compute_distillation_loss(pred, t_pred, model, loss)
+                loss = compute_distillation_output_loss(pred, t_pred, model, loss)
+                if opt.d_feature:
+                    loss = compute_distillation_feature_loss(s_f, t_f, model, loss)
 
             if not torch.isfinite(loss):
                 print('WARNING: non-finite loss, ending training ', loss_items)
@@ -354,6 +393,9 @@ def train(hyp):
 
             # end batch ------------------------------------------------------------------------------------------------
 
+        if opt.dist and opt.d_feature:
+            for hook in hooks:
+                hook.remove()
         # Scheduler
         scheduler.step()
 
@@ -456,6 +498,7 @@ if __name__ == '__main__':
     # distillation
     parser.add_argument('--dist', action='store_true', help='distillation')
     parser.add_argument('--t_weights', type=str, help='teacher model for distillation')
+    parser.add_argument('--d_feature', type=str, help='if true, distill both feature and output layers')
     opt = parser.parse_args()
 
     if opt.type == "mcocos":
@@ -587,6 +630,32 @@ if __name__ == '__main__':
         opt.dist = True
         opt.t_weights = "outputs/vocl/weights/best_vocl.pt"
         hyp["dist"] = 1
+
+    if opt.type == "dfmvocs":
+        opt.cfg = 'models/mobile-yolo5s_voc.yaml'
+        opt.data = "data/voc.yaml"
+        opt.name = opt.type
+        opt.weights = "/root/.cache/torch/checkpoints/mobilenet_v2-b0353104.pth"
+        opt.epochs = 50
+        opt.batch_size = 24
+        opt.multi_scale = False
+        opt.dist = True
+        opt.t_weights = "outputs/vocs/weights/best_vocs.pt"
+        opt.d_feature = True
+        hyp["dist"] = 1.0
+
+    if opt.type == "dfmvocs_l":
+        opt.cfg = 'models/mobile-yolo5s_voc.yaml'
+        opt.data = "data/voc.yaml"
+        opt.name = opt.type
+        opt.weights = "/root/.cache/torch/checkpoints/mobilenet_v2-b0353104.pth"
+        opt.epochs = 50
+        opt.batch_size = 24
+        opt.multi_scale = False
+        opt.dist = True
+        opt.t_weights = "outputs/vocl/weights/best_vocl.pt"
+        opt.d_feature = True
+        hyp["dist"] = 1.0
 
     if opt.nw is None:
         nw = min([os.cpu_count(), opt.batch_size if opt.batch_size > 1 else 0, 8])  # number of workers

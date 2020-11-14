@@ -11,7 +11,7 @@ def DWConv(c1, c2, k=1, s=1, act=True):
 
 class Conv(nn.Module):
     # Standard convolution
-    def __init__(self, c1, c2, k=1, s=1, g=1, act=True, pruning=False):  # ch_in, ch_out, kernel, stride, groups
+    def __init__(self, c1, c2, k=1, s=1, g=1, act=True):  # ch_in, ch_out, kernel, stride, groups
         super(Conv, self).__init__()
         self.conv = nn.Conv2d(c1, c2, k, s, k // 2, groups=g, bias=False)
         self.bn = nn.BatchNorm2d(c2)
