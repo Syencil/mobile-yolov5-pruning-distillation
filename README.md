@@ -14,7 +14,7 @@ yolov5s在640x640分辨率下的计算量和参数量分别为8.39G和7.07M。�
 如果未经特殊说明则均为使用默认参数，batchsize=24，epoch=50，train_size = 640，test_size = 640，conf_thres=0.001，iou_thres=0.6，mAP均为50<br>
 PS. 由于资源有限，此项目只训练50个epoch，实际上可以通过调整学习率和迭代次数进一步提高mAP。但是可以通过控制相同的超参数来进行实验对比，所以并不影响最终结果。<br>
 
-baseline由4个部分组成：yolov5s，官方提供的coco权重在voc上进行微调所以不具备可比性，但是可以作为蒸馏指导模型；mobilev2-yolo5s和mobilev2-yolo5l均是只更改了对应的backbone；mobilev2-yolo3则是用的yolo3head，结构同[https://github.com/Adamdad/keras-YOLOv3-mobilenet](https://github.com/Adamdad/keras-YOLOv3-mobilenet)
+baseline由4个部分组成：yolov5s，官方提供的coco权重在voc上进行微调所以不具备可比性，但是可以作为蒸馏指导模型；mobilev2-yolo5s和mobilev2-yolo5l均是只更改了对应的backbone；mobilev2-yolo3则是用的yolo3head，结构同[keras-YOLOv3-mobilenet](https://github.com/Adamdad/keras-YOLOv3-mobilenet)
 基本一致（keras的是mobilev1，参数量和计算量更大），此处作为参照物。
 
 |Model|Precision|Recall|mAP|Params(M)|Flops(G)|
@@ -38,7 +38,7 @@ PS.实际上yolov5独有的focus模块表现并不好（在后文NCNN模块中�
 2. 根据稀疏率决定剪枝阈值
 3. 开始剪枝，如果当前层所有值均小于阈值则保留最大的一个通道(保证结构不被破坏)
 
-![avatar](./pic/pruning_func.jpg)
+<div align="left"> <img src="./pic/pruning_func.png" height="180"> </div>
 
 |Model|Precision|Recall|mAP|ex-epoch|sl|Prune_prob|Params(M)|Flops(G)|
 |----|----|----|----|----|----|----|----|----|
@@ -54,18 +54,20 @@ PS.实际上yolov5独有的focus模块表现并不好（在后文NCNN模块中�
 4. 不过还可以看出一个问题，就是选的0.5稀疏率太大了，把很多并不小的层都剪切掉了。说明我们对应当前sl训练出来的模型，使用0.5的稀疏率不够好，这次我们不按照稀疏率来剪枝，而是给定一个非常小的值0.01。
 5. finetune 10个epoch。mAP是0.604掉点严重，不过注意到是用的cos学习率，在训练末期val acc还在上涨。为了验证是否是finetune训练次数不够，此时尝试训练20个epoch，map果然上升到0.699。
 此时剪枝过后的mAP已经超过稀疏训练的baseline了。不过不排除是因为多训练了20个epoch的原因。<br>
-![avatar](./pic/after_pruning_prob_05.jpg) ![avatar](./pic/after_pruning_thres_001.jpg) 
+
+<div class="half" style="text-align: left;"> <img src="./pic/after_pruning_prob_05.jpg" height="241">  <img src="./pic/after_pruning_thres_001.jpg" height="241"> </div>
 
 ## Distillation
 ### Introduction
-![avatar](./pic/distillation_2.jpg) <br>
 [蒸馏]((https://arxiv.org/pdf/2006.05525.pdf))是希望将T模型学习到的知识迁移到S模型中。通常蒸馏方式大体可以分为1）Response-based，2）Feature-based，3）Relation-based。
 按照策略则可以分为1）online distillation，2）offline distillation和3）self distillation。按照蒸馏算法可以分为1）adversarial distillation，2）multi-teacher distillation，
 3）cross-modal distillation，4）graph-based distillation，5）attention-based distillation，6）data-free distillation，7）quatized Distillation，8）lifelong distillation，
 9）nas distillation。<br>
-![avatar](./pic/distillation_3.jpg)
+我将采用多种不同的蒸馏方式尝试对mobilev2-yolo5s提点，每一种Strategy都对应有相关论文。并不是每一种方式都有效，可能和组合方式以及参数调节都有关。<br>
 
-### Strategy 1
+<img src="./pic/distillation_2.png" height="241">
+
+### Strategy 1 Output-based Distillation
 我们以mobilev2-yolo5s作为S-model，希望能将T-model在coco和voc上学习到的知识蒸馏到mobilev2-yolo5s中。以[Object detection at 200 Frames Per Second](https://arxiv.org/abs/1805.06361)为基础方法配置蒸馏损失函数，抑制背景框带来的类别不均衡问题。
 用L2 loss作为蒸馏基础函数，损失中的蒸馏dist平衡系数选择为1。<br>
 
@@ -86,19 +88,45 @@ capacity gap并不是很明显。蒸馏后提了接近3个点。
 |mobilev2-yolo5s|0.457|0.809|0.719|
 |S-mobilev2-yolo5s|0.233|0.879|0.724|
 
-### Strategy 2
-策略1仅仅只是蒸馏最后一个输出层，属于distillation中Response-Based。考虑到特征提取也是可以进行蒸馏的，提升backbone在特征提取上的表征能力。
+### Strategy 2 Feature-based+Output-based Distillation
+Strategy 1仅仅只是蒸馏最后一个输出层，属于distillation中Response-Based。考虑到特征提取也是可以进行蒸馏的，提升backbone在特征提取上的表征能力。
 对于T和S特征图之间维度存在不匹配的情况，我们首先应用一个Converter网络将通道数转换成相同的
-这个思想在[FitNet](https://arxiv.org/pdf/1412.6550.pdf)上就提出过。<br>
-![avatar](./pic/distillation_4.jpg)
+这个思想在[FitNet](https://arxiv.org/pdf/1412.6550.pdf)上就提出过，实际操作中更类似于如下<br>
+<img src="./pic/distillation_5.png" height="241"> <img src="./pic/distillation_6.jpg" height="241"> 
 
-1. 我们尝试将特征图和输出层一起作为蒸馏指导，dist参数为1.0。mAP和Strategy 1完全相同。
+1. 我们尝试将特征图和输出层一起作为蒸馏指导。对于T和S中间特征图输出维度不匹配的问题，采用在S网络输出接一个Converter，将其升维到T网络匹配。
+Converter由conv+bn+lrelu组成，和T网络的基础模块相同。
+output层参数为1.0，feature参数为0.5。mAP和Strategy 1几乎完全相同。
+感觉feature的hint loss没有起到作用，主要还是output layer蒸馏在做指导。
 
 |Model|Precision|Recall|mAP|
 |----|----|----|----|
 |T-yolo5s|0.536|0.863|0.809|
 |mobilev2-yolo5s|0.457|0.809|0.719|
-|S-mobilev2-yolo5s|0.303|0.871|0.746|
+|S-mobilev2-yolo5s|0.2881|0.876|0.748|
+
+2. 由于TS之间所使用的激活函数不同，感觉Strategy 2.1 的方法会导致信息不匹配。此次的Converter则改成纯conv构成，同时避免bn和act对信息造成影响。
+这种基本思想和[A Comprehensive Overhaul of Feature Distillation](https://openaccess.thecvf.com/content_ICCV_2019/papers/Heo_A_Comprehensive_Overhaul_of_Feature_Distillation_ICCV_2019_paper.pdf)有点类似。
+不过从结果上来看，还是没有起到任何作用<br>
+
+|Model|Precision|Recall|mAP|
+|----|----|----|----|
+|T-yolo5s|0.536|0.863|0.809|
+|mobilev2-yolo5s|0.457|0.809|0.719|
+|S-mobilev2-yolo5s|0.326|0.87|0.746|
+
+### Strategy 3 Teach-Assistant Distillation
+在Strategy 1.2的实验中可以看出，T越强力蒸馏的S提升并不一定更多，反而更低。类似的实验在[TADK](https://arxiv.org/pdf/1902.03393.pdf)也有。
+用yolov5l作为T网络提升不高的原因可能有2点。1）T更复杂，S没有足够的capacity来模仿T，2）T的精度更高，模型确定性更强，输出logits（soft label）变得less soft。
+但是我想让更大的yolov5l作为指导网络，那么可以利用yolov5s作为助教网络辅助蒸馏。
+
+1. 将yolov5l作为T网络，yolov5s作为TA网络（这里T和TA之间其实差距也是非常大的，7倍差距），mobilev2-yolo5s作为S网络。首先对TA蒸馏，提升yolov5s在voc上的mAP。其次利用TA对S蒸馏。
+不过从TA的精度来看，由于T和TA差了7倍多，TA的精度和train from scratch基本相同，那么后面的实验也没必要做了。主要问题是TA选择不合适，在yolov5l和yolov5s之间至少还得再来两个TA网络才能弥补gap。
+
+|Model|Precision|Recall|mAP|
+|----|----|----|----|
+|T-yolo5l|0.659|0.881|0.862|
+|TA-yolo5s|0.322|0.901|0.799|
 
 ## Quick Start
 ### Baseline

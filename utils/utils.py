@@ -481,7 +481,7 @@ def compute_distillation_feature_loss(s_f, t_f, model, loss):
     dl += loss_func3(s_f[2], t_f[2])
 
     bs = s_f[0].shape[0]
-    dl *= h['dist']
+    dl *= h['dist'] / 2
     loss += dl * bs
     return loss
 

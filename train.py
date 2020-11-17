@@ -194,15 +194,32 @@ def train(hyp):
                 return hooks
             # feature convert
             from models.common import Conv
-            Converter_1 = Conv(32, 128)
-            Converter_2 = Conv(96, 256)
-            Converter_3 = Conv(320, 512)
-            Converter_1.to(device)
-            Converter_2.to(device)
-            Converter_3.to(device)
-            Converter_1.train()
-            Converter_2.train()
-            Converter_3.train()
+            c1 = 128
+            c2 = 256
+            c3 = 512
+            if opt.type == "dfmvocs_l":
+                c1 = 256
+                c2 = 512
+                c3 = 1024
+            S_Converter_1 = Conv(32, c1, act=False)
+            S_Converter_2 = Conv(96, c2, act=False)
+            S_Converter_3 = Conv(320, c3, act=False)
+            S_Converter_1.to(device)
+            S_Converter_2.to(device)
+            S_Converter_3.to(device)
+            S_Converter_1.train()
+            S_Converter_2.train()
+            S_Converter_3.train()
+
+            T_Converter_1 = Conv(c1, c1, act=False)
+            T_Converter_2 = Conv(c2, c2, act=False)
+            T_Converter_3 = Conv(c3, c3, act=False)
+            T_Converter_1.to(device)
+            T_Converter_2.to(device)
+            T_Converter_3.to(device)
+            T_Converter_1.train()
+            T_Converter_2.train()
+            T_Converter_3.train()
 
     # Mixed precision training https://github.com/NVIDIA/apex
     if mixed_precision:
@@ -341,11 +358,14 @@ def train(hyp):
                 with torch.no_grad():
                     t_pred = t_model(imgs)
                     if opt.d_feature:
-                        d_f1 = Converter_1(activation["s_f1"])
-                        d_f2 = Converter_2(activation["s_f2"])
-                        d_f3 = Converter_3(activation["s_f3"])
-                        s_f = [d_f1, d_f2, d_f3]
-                        t_f = [activation["t_f1"], activation["t_f2"], activation["t_f3"]]
+                        s_f1 = S_Converter_1(activation["s_f1"])
+                        s_f2 = S_Converter_2(activation["s_f2"])
+                        s_f3 = S_Converter_3(activation["s_f3"])
+                        s_f = [s_f1, s_f2, s_f3]
+                        t_f1 = T_Converter_1(activation["t_f1"])
+                        t_f2 = T_Converter_2(activation["t_f2"])
+                        t_f3 = T_Converter_3(activation["t_f3"])
+                        t_f = [t_f1, t_f2, t_f3]
             # Loss
             loss, loss_items = compute_loss(pred, targets.to(device), model)
 
@@ -619,6 +639,18 @@ if __name__ == '__main__':
         opt.t_weights = "outputs/voc/weights/best_voc.pt"
         hyp["dist"] = 1
 
+    if opt.type == "dvocs_l":
+        opt.cfg = 'models/yolov5s_voc.yaml'
+        opt.data = "data/voc.yaml"
+        opt.name = opt.type
+        opt.weights = "/data/checkpoints/yolov5/yolov5s.pt"
+        opt.epochs = 50
+        opt.batch_size = 24
+        opt.multi_scale = False
+        opt.dist = True
+        opt.t_weights = "outputs/vocl/weights/best_vocl.pt"
+        hyp["dist"] = 1
+
     if opt.type == "dmvocs_l":
         opt.cfg = 'models/mobile-yolo5s_voc.yaml'
         opt.data = "data/voc.yaml"
@@ -654,6 +686,19 @@ if __name__ == '__main__':
         opt.multi_scale = False
         opt.dist = True
         opt.t_weights = "outputs/vocl/weights/best_vocl.pt"
+        opt.d_feature = True
+        hyp["dist"] = 1.0
+
+    if opt.type == "dtamvocs":
+        opt.cfg = 'models/mobile-yolo5s_voc.yaml'
+        opt.data = "data/voc.yaml"
+        opt.name = opt.type
+        opt.weights = "/root/.cache/torch/checkpoints/mobilenet_v2-b0353104.pth"
+        opt.epochs = 50
+        opt.batch_size = 24
+        opt.multi_scale = False
+        opt.dist = True
+        opt.t_weights = "outputs/dvocs_l/weights/best_dvocs_l.pt"
         opt.d_feature = True
         hyp["dist"] = 1.0
 
