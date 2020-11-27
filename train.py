@@ -193,7 +193,7 @@ def train(hyp):
                 hooks.append(t_model.model._modules["10"].register_forward_hook(get_activation("t_f3")))
                 return hooks
             # feature convert
-            from models.common import Conv
+            from models.common import Converter
             c1 = 128
             c2 = 256
             c3 = 512
@@ -201,19 +201,22 @@ def train(hyp):
                 c1 = 256
                 c2 = 512
                 c3 = 1024
-            S_Converter_1 = Conv(32, c1, act=False)
-            S_Converter_2 = Conv(96, c2, act=False)
-            S_Converter_3 = Conv(320, c3, act=False)
-            S_Converter_1.to(device)
-            S_Converter_2.to(device)
-            S_Converter_3.to(device)
-            S_Converter_1.train()
-            S_Converter_2.train()
-            S_Converter_3.train()
+            # S_Converter_1 = Converter(32, c1, act=True)
+            # S_Converter_2 = Converter(96, c2, act=True)
+            # S_Converter_3 = Converter(320, c3, act=True)
+            # S_Converter_1.to(device)
+            # S_Converter_2.to(device)
+            # S_Converter_3.to(device)
+            # S_Converter_1.train()
+            # S_Converter_2.train()
+            # S_Converter_3.train()
 
-            T_Converter_1 = Conv(c1, c1, act=False)
-            T_Converter_2 = Conv(c2, c2, act=False)
-            T_Converter_3 = Conv(c3, c3, act=False)
+            # T_Converter_1 = nn.ReLU6()
+            # T_Converter_2 = nn.ReLU6()
+            # T_Converter_3 = nn.ReLU6()
+            T_Converter_1 = Converter(c1, 32, act=True)
+            T_Converter_2 = Converter(c2, 96, act=True)
+            T_Converter_3 = Converter(c3, 320, act=True)
             T_Converter_1.to(device)
             T_Converter_2.to(device)
             T_Converter_3.to(device)
@@ -355,17 +358,22 @@ def train(hyp):
             # Forward
             pred = model(imgs)
             if opt.dist:
-                with torch.no_grad():
+                if opt.d_online:
                     t_pred = t_model(imgs)
-                    if opt.d_feature:
-                        s_f1 = S_Converter_1(activation["s_f1"])
-                        s_f2 = S_Converter_2(activation["s_f2"])
-                        s_f3 = S_Converter_3(activation["s_f3"])
-                        s_f = [s_f1, s_f2, s_f3]
-                        t_f1 = T_Converter_1(activation["t_f1"])
-                        t_f2 = T_Converter_2(activation["t_f2"])
-                        t_f3 = T_Converter_3(activation["t_f3"])
-                        t_f = [t_f1, t_f2, t_f3]
+                else:
+                    with torch.no_grad():
+                        t_pred = t_model(imgs)
+                if opt.d_feature:
+                    # s_f1 = S_Converter_1(activation["s_f1"])
+                    # s_f2 = S_Converter_2(activation["s_f2"])
+                    # s_f3 = S_Converter_3(activation["s_f3"])
+                    # s_f = [s_f1, s_f2, s_f3]
+                    s_f = (activation["s_f1"], activation["s_f2"], activation["s_f3"])
+                    t_f1 = T_Converter_1(activation["t_f1"])
+                    t_f2 = T_Converter_2(activation["t_f2"])
+                    t_f3 = T_Converter_3(activation["t_f3"])
+                    t_f = [t_f1, t_f2, t_f3]
+                    # t_f = (activation["t_f1"], activation["t_f2"], activation["t_f3"])
             # Loss
             loss, loss_items = compute_loss(pred, targets.to(device), model)
 
@@ -375,6 +383,8 @@ def train(hyp):
 
             # distillation
             if opt.dist:
+                if opt.d_online:
+                    loss, _ = compute_loss(t_pred, targets.to(device), model, loss)
                 loss = compute_distillation_output_loss(pred, t_pred, model, loss)
                 if opt.d_feature:
                     loss = compute_distillation_feature_loss(s_f, t_f, model, loss)
@@ -518,7 +528,8 @@ if __name__ == '__main__':
     # distillation
     parser.add_argument('--dist', action='store_true', help='distillation')
     parser.add_argument('--t_weights', type=str, help='teacher model for distillation')
-    parser.add_argument('--d_feature', type=str, help='if true, distill both feature and output layers')
+    parser.add_argument('--d_feature', action='store_true', help='if true, distill both feature and output layers')
+    parser.add_argument('--d_online', action='store_true', help='if true, using online-distillation')
     opt = parser.parse_args()
 
     if opt.type == "mcocos":
@@ -668,6 +679,19 @@ if __name__ == '__main__':
         opt.data = "data/voc.yaml"
         opt.name = opt.type
         opt.weights = "/root/.cache/torch/checkpoints/mobilenet_v2-b0353104.pth"
+        opt.epochs = 100
+        opt.batch_size = 24
+        opt.multi_scale = False
+        opt.dist = True
+        opt.t_weights = "outputs/vocs/weights/best_vocs.pt"
+        opt.d_feature = True
+        hyp["dist"] = 1.0
+
+    if opt.type == "dfsmvocs":
+        opt.cfg = 'models/mobile-yolo5s_voc.yaml'
+        opt.data = "data/voc.yaml"
+        opt.name = opt.type
+        opt.weights = "/root/.cache/torch/checkpoints/mobilenet_v2-b0353104.pth"
         opt.epochs = 50
         opt.batch_size = 24
         opt.multi_scale = False
@@ -702,6 +726,20 @@ if __name__ == '__main__':
         opt.d_feature = True
         hyp["dist"] = 1.0
 
+    if opt.type == "domvocs":
+        # TODO
+        opt.cfg = 'models/mobile-yolo5s_voc.yaml'
+        opt.data = "data/voc.yaml"
+        opt.name = opt.type
+        opt.weights = "/root/.cache/torch/checkpoints/mobilenet_v2-b0353104.pth"
+        opt.epochs = 50
+        opt.batch_size = 24
+        opt.multi_scale = False
+        opt.dist = True
+        opt.d_online = True
+        opt.t_weights = "outputs/voc/weights/best_voc.pt"
+        hyp["dist"] = 1
+
     if opt.nw is None:
         nw = min([os.cpu_count(), opt.batch_size if opt.batch_size > 1 else 0, 8])  # number of workers
     else:
@@ -715,6 +753,8 @@ if __name__ == '__main__':
     os.makedirs(wdir, exist_ok=True)
     last = wdir + 'last.pt'
     best = wdir + 'best.pt'
+    if opt.resume:
+        opt.weights = last
     results_file = os.path.join(rdir, 'results.txt')
 
     opt.cfg = check_file(opt.cfg)  # check file

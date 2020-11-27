@@ -95,19 +95,21 @@ Strategy 1仅仅只是蒸馏最后一个输出层，属于distillation中Respons
 <img src="./pic/distillation_5.png" height="241"> <img src="./pic/distillation_6.jpg" height="241"> 
 
 1. 我们尝试将特征图和输出层一起作为蒸馏指导。对于T和S中间特征图输出维度不匹配的问题，采用在S网络输出接一个Converter，将其升维到T网络匹配。
-Converter由conv+bn+lrelu组成，和T网络的基础模块相同。
-output层参数为1.0，feature参数为0.5。mAP和Strategy 1几乎完全相同。
-感觉feature的hint loss没有起到作用，主要还是output layer蒸馏在做指导。
+Converter由conv+bn+relu6组成，T网络输出单独接一个relu6，保证激活函数相同。（上个commit版本出现了一个bug，导致精度没变其实是不对的，现已修正）
+output层参数为1.0，feature参数为0.5。mAP0.663甚至比baseline都要低。feature distillation居然让模型掉点了，怀疑是feature权重太大，降到0.1667，mAP可以提升到0.68，还是低于baseline。
+继续下降到0.05，mAP可以回到baseline的水平，不过在训练末期mAP还在上升，loss还在下降。最后尝试训练100个epoch，mAP才回到74。
+实际上还尝试过各种变形和各种参数，但是感觉效果仍然不好。
 
 |Model|Precision|Recall|mAP|
 |----|----|----|----|
 |T-yolo5s|0.536|0.863|0.809|
 |mobilev2-yolo5s|0.457|0.809|0.719|
-|S-mobilev2-yolo5s|0.2881|0.876|0.748|
+|S-mobilev2-yolo5s|0.256|0.828|0.663|
+|S-mobilev2-yolo5s(100epoch)|0.375|0.842|0.741|
 
 2. 由于TS之间所使用的激活函数不同，感觉Strategy 2.1 的方法会导致信息不匹配。此次的Converter则改成纯conv构成，同时避免bn和act对信息造成影响。
 这种基本思想和[A Comprehensive Overhaul of Feature Distillation](https://openaccess.thecvf.com/content_ICCV_2019/papers/Heo_A_Comprehensive_Overhaul_of_Feature_Distillation_ICCV_2019_paper.pdf)有点类似。
-不过从结果上来看，还是没有起到任何作用<br>
+不过从结果上来看，还是没有起到任何作用。<br>
 
 |Model|Precision|Recall|mAP|
 |----|----|----|----|

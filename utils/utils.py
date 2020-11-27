@@ -470,23 +470,25 @@ def compute_distillation_output_loss(p, t_p, model, loss):
 def compute_distillation_feature_loss(s_f, t_f, model, loss):
     h = model.hyp  # hyperparameters
     ft = torch.cuda.FloatTensor if s_f[0].is_cuda else torch.Tensor
-    dl = ft([0])
+    dl_1, dl_2, dl_3 = ft([0]), ft([0]), ft([0])
 
     loss_func1 = nn.MSELoss(reduction="mean")
     loss_func2 = nn.MSELoss(reduction="mean")
     loss_func3 = nn.MSELoss(reduction="mean")
 
-    dl += loss_func1(s_f[0], t_f[0])
-    dl += loss_func2(s_f[1], t_f[1])
-    dl += loss_func3(s_f[2], t_f[2])
+    dl_1 += loss_func1(s_f[0], t_f[0])
+    dl_2 += loss_func2(s_f[1], t_f[1])
+    dl_3 += loss_func3(s_f[2], t_f[2])
 
     bs = s_f[0].shape[0]
-    dl *= h['dist'] / 2
-    loss += dl * bs
+    dl_1 *= h['dist'] / 20
+    dl_2 *= h['dist'] / 20
+    dl_3 *= h['dist'] / 20
+    loss += (dl_1 + dl_2 + dl_3) * bs
     return loss
 
 
-def compute_loss(p, targets, model):  # predictions, targets, model
+def compute_loss(p, targets, model, pre_loss=None):  # predictions, targets, model
     ft = torch.cuda.FloatTensor if p[0].is_cuda else torch.Tensor
     lcls, lbox, lobj = ft([0]), ft([0]), ft([0])
     tcls, tbox, indices, anchors = build_targets(p, targets, model)  # targets
@@ -555,7 +557,10 @@ def compute_loss(p, targets, model):  # predictions, targets, model
             lbox *= g / nt
 
     loss = lbox + lobj + lcls
-    return loss * bs, torch.cat((lbox, lobj, lcls, loss)).detach()
+    loss = loss * bs
+    if pre_loss is not None:
+        loss += pre_loss
+    return loss, torch.cat((lbox, lobj, lcls, loss)).detach()
 
 
 def build_targets(p, targets, model):
