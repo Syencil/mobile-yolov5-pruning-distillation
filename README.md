@@ -178,16 +178,16 @@ python3 test.py --weights 权重路径
 |S-mobilev2-yolo5s(conv)|0.333|0.866|0.744|3.60|4.40|
 |S-mobilev2-yolo5s(focus)|0.296|0.876|0.746|3.60|4.67|
 
-其中focus代表第一个模块采用yolov5的focus模块，conv则是采用stride=2的3x3卷积作为第一个模块。
+2. 其中focus代表第一个模块采用yolov5的focus模块，conv则是采用stride=2的3x3卷积作为第一个模块。
 根据以上结论，我们采用重新训练了一个模型，并进行蒸馏得到S-mobilev2-yolo5s(conv)。利用onnx2ncnn将其转换并部署到android
 
-2. TnesorRT中的tensor内存是连续模型，然而在ncnn中采用腾讯自己的mat格式，并不能保证channel之间的内存是连续性的。
+3. TnesorRT中的tensor内存是连续模型，然而在ncnn中采用腾讯自己的mat格式，并不能保证channel之间的内存是连续性的。
 这就导致无法按照之前tensorRT的后处理（BHWAC）来进行。在导出的时候尽量保证BCHW的格式，这样在ncnn中没有个channel中的值才是连续的、可解释的。
 
-3. 有一个比较坑的点：由于用的是nn.Upsample进行上采样，在导出为onnx格式的时候，resize操作中只保存了输出outputsize而不是scale。
+4. 有一个比较坑的点：由于用的是nn.Upsample进行上采样，在导出为onnx格式的时候，resize操作中只保存了输出outputsize而不是scale。
 这导致在转ncnn的时候，将其转换为Interp操作的时候直接将outputsize固定了。然而Onnx和trt中输入是固定的，在ncnn中是动态尺寸输入，这就会导致m和l的输出大小永远不变。
 
-4. 在实际应用中发现，如果只走arm cpu，在P40 pro上size=640分辨率下的mobilev2-yolo5s的FPS最高也就9（所有均算上了前后处理的时间）。
+5. 在实际应用中发现，如果只走arm cpu，在P40 pro上size=640分辨率下的mobilev2-yolo5s的FPS最高也就9（所有均算上了前后处理的时间）。
 考虑640的输入大小计算量仍然太大，端上并不需要这么高的推理分辨率，故考虑size=320。此时发现推理FPS可以达到32，不过voc上mAP下降了2.7。
 
 |Model|Precision|Recall|mAP|Params(M)|Flops(G)|
@@ -198,6 +198,12 @@ python3 test.py --weights 权重路径
 ### Demon in Android
 具体代码可以参考[android demon](https://github.com/Syencil/ncnn-android-projects)，以下为一些截图示例<br>
 ![avatar](./pic/demo1.jpg) ![avatar](./pic/demo2.jpg) ![avatar](./pic/demo3.jpg) ![avatar](./pic/demo4.jpg)
+
+## Conclusion
+yolov5s本身是一个非常优秀的网络。但是我们通过从模型端入手进行二次优化，构建mobilev2-yolo5s，参数量和计算量是mobilev2-yolo3的20%，yolov5s的50%。
+利用官方提供的yolov5s权重在voc上finetune一下作为T网络，可以很好的将coco和voc上学习到的一些知识迁移到我们的mobilev2-yolo5s网络上。
+此时mAP和mobilev2-yolo3几乎一样，但是只有1/5的大小。对比ncnn的benchmark，在320x320分辨率下速度可以提升250%！
+同时提供了一种更加轻量化的剪枝版本，体积是原版mobilev2-yolo5s的2/3，和baseline相比几乎不掉点。
 
 ## Reference
 1. [https://github.com/ultralytics/yolov5](https://github.com/ultralytics/yolov5)
