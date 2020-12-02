@@ -87,10 +87,8 @@ def test(data,
                                 collate_fn=dataset.collate_fn)
 
     seen = 0
-    names = {0: 'aeroplane', 1: 'bicycle', 2: 'bird', 3: 'boat', 4: 'bottle', 5: 'bus',
-               6: 'car', 7: 'cat', 8: 'chair', 9: 'cow', 10: 'diningtable', 11: 'dog', 12: 'horse',
-               13: 'motorbike', 14: 'person', 15: 'pottedplant', 16: 'sheep', 17: 'sofa',
-               18: 'train', 19: 'tvmonitor'}
+    names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
+
     coco91class = coco80_to_coco91_class()
     s = ('%20s' + '%12s' * 6) % ('Class', 'Images',
                                  'Targets', 'P', 'R', 'mAP@.5', 'mAP@.5:.95')
@@ -365,7 +363,8 @@ if __name__ == '__main__':
              opt.iou_thres,
              opt.save_json,
              opt.single_cls,
-             opt.augment)
+             opt.augment,
+             verbose=opt.verbose)
 
     elif opt.task == 'study':  # run over a range of settings and save/plot
         for weights in ['yolov5s.pt', 'yolov5m.pt',

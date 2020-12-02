@@ -201,22 +201,22 @@ def train(hyp):
                 c1 = 256
                 c2 = 512
                 c3 = 1024
-            # S_Converter_1 = Converter(32, c1, act=True)
-            # S_Converter_2 = Converter(96, c2, act=True)
-            # S_Converter_3 = Converter(320, c3, act=True)
-            # S_Converter_1.to(device)
-            # S_Converter_2.to(device)
-            # S_Converter_3.to(device)
-            # S_Converter_1.train()
-            # S_Converter_2.train()
-            # S_Converter_3.train()
+            S_Converter_1 = Converter(32, c1, act=True)
+            S_Converter_2 = Converter(96, c2, act=True)
+            S_Converter_3 = Converter(320, c3, act=True)
+            S_Converter_1.to(device)
+            S_Converter_2.to(device)
+            S_Converter_3.to(device)
+            S_Converter_1.train()
+            S_Converter_2.train()
+            S_Converter_3.train()
 
-            # T_Converter_1 = nn.ReLU6()
-            # T_Converter_2 = nn.ReLU6()
-            # T_Converter_3 = nn.ReLU6()
-            T_Converter_1 = Converter(c1, 32, act=True)
-            T_Converter_2 = Converter(c2, 96, act=True)
-            T_Converter_3 = Converter(c3, 320, act=True)
+            T_Converter_1 = nn.ReLU6()
+            T_Converter_2 = nn.ReLU6()
+            T_Converter_3 = nn.ReLU6()
+            # T_Converter_1 = Converter(c1, 32, act=True)
+            # T_Converter_2 = Converter(c2, 96, act=True)
+            # T_Converter_3 = Converter(c3, 320, act=True)
             T_Converter_1.to(device)
             T_Converter_2.to(device)
             T_Converter_3.to(device)
@@ -360,14 +360,16 @@ def train(hyp):
             if opt.dist:
                 if opt.d_online:
                     t_pred = t_model(imgs)
+                    for p in t_pred:
+                        p = p.detach()
                 else:
                     with torch.no_grad():
                         t_pred = t_model(imgs)
                 if opt.d_feature:
-                    # s_f1 = S_Converter_1(activation["s_f1"])
-                    # s_f2 = S_Converter_2(activation["s_f2"])
-                    # s_f3 = S_Converter_3(activation["s_f3"])
-                    # s_f = [s_f1, s_f2, s_f3]
+                    s_f1 = S_Converter_1(activation["s_f1"])
+                    s_f2 = S_Converter_2(activation["s_f2"])
+                    s_f3 = S_Converter_3(activation["s_f3"])
+                    s_f = [s_f1, s_f2, s_f3]
                     s_f = (activation["s_f1"], activation["s_f2"], activation["s_f3"])
                     t_f1 = T_Converter_1(activation["t_f1"])
                     t_f2 = T_Converter_2(activation["t_f2"])
@@ -375,7 +377,7 @@ def train(hyp):
                     t_f = [t_f1, t_f2, t_f3]
                     # t_f = (activation["t_f1"], activation["t_f2"], activation["t_f3"])
             # Loss
-            loss, loss_items = compute_loss(pred, targets.to(device), model)
+            loss, loss_items = compute_loss(pred, targets.to(device), model, None)
 
             # Sparse Learning
             if opt.sl > 0:
@@ -384,7 +386,7 @@ def train(hyp):
             # distillation
             if opt.dist:
                 if opt.d_online:
-                    loss, _ = compute_loss(t_pred, targets.to(device), model, loss)
+                    loss, _ = compute_loss(t_pred, targets.to(device), t_model, loss)
                 loss = compute_distillation_output_loss(pred, t_pred, model, loss)
                 if opt.d_feature:
                     loss = compute_distillation_feature_loss(s_f, t_f, model, loss)
@@ -524,12 +526,12 @@ if __name__ == '__main__':
     parser.add_argument('--nw', type=int, default=None, help='num of worker')
     # pruning
     parser.add_argument('--sl', default=0, type=float, help='sparse learning')
-    parser.add_argument('--ft', action='store_true', help='fine-tune')
+    parser.add_argument('--ft', action='store_true', default=False, help='fine-tune')
     # distillation
     parser.add_argument('--dist', action='store_true', help='distillation')
-    parser.add_argument('--t_weights', type=str, help='teacher model for distillation')
-    parser.add_argument('--d_feature', action='store_true', help='if true, distill both feature and output layers')
-    parser.add_argument('--d_online', action='store_true', help='if true, using online-distillation')
+    parser.add_argument('--t_weights', type=str, default="", help='teacher model for distillation')
+    parser.add_argument('--d_feature', action='store_true', default=False, help='if true, distill both feature and output layers')
+    parser.add_argument('--d_online', action='store_true', default=False, help='if true, using online-distillation')
     opt = parser.parse_args()
 
     if opt.type == "mcocos":
@@ -546,7 +548,7 @@ if __name__ == '__main__':
         opt.data = "data/coco.yaml"
         opt.name = opt.type
         opt.weights = "outputs/dmvocs/weights/best_dmvocs.pt"
-        opt.epochs = 50
+        opt.epochs = 10
         opt.batch_size = 24
         opt.multi_scale = False
         opt.dist = True
@@ -737,7 +739,7 @@ if __name__ == '__main__':
         opt.multi_scale = False
         opt.dist = True
         opt.d_online = True
-        opt.t_weights = "outputs/voc/weights/best_voc.pt"
+        opt.t_weights = "/data/checkpoints/yolov5/yolov5s.pt"
         hyp["dist"] = 1
 
     if opt.nw is None:

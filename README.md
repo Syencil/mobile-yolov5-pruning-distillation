@@ -157,6 +157,20 @@ export PYTHONPATH=$PWD
 python3 test.py --weights 权重路径
 ```
 
+## Comparision with other methods in github
+github上也有一些其他作者实现的mobile-yolo系列，其中paddle和keras都是用mobilev1作为backbone，无法直接计算Flops。
+darknet的Flops采用作者Readme中的BFlops。
+
+|Model|resolution|COCO mAP|VOC mAP|Size|
+|----|----|----|----|----|
+|Ours|320|23.2|71.7|1x|
+|Ours|640|27.5|74.4|4x|
+|[caffe](https://github.com/eric612/MobileNet-YOLO)|352|-|71.5|x1.2|
+|[paddle](https://github.com/PaddlePaddle/PaddleDetection/blob/release/0.5/docs/MODEL_ZOO_cn.md)|608|29.3|76.2|-|
+|[darknet](https://github.com/dog-qiuqiu/MobileNet-Yolo)|352|-|70.7|x2.2|
+|[keras](https://github.com/Adamdad/keras-YOLOv3-mobilenet)|320|-|74.56|-|
+|[tensorflow](https://github.com/fsx950223/mobilenetv2-yolov3)|416|-|66.9|x1.7|
+
 ## Inference with TensorRT
 1. python3 model/onnx_export.py --weights weight_path
 2. 参考[https://github.com/Syencil/tensorRT](https://github.com/Syencil/tensorRT)

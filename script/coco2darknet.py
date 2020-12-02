@@ -469,13 +469,15 @@ def convert_ath_json(json_dir):  # dir contains json annotations and images
     print('Done. Output saved to %s' % Path(dir).absolute())
 
 
-def convert_coco_json(json_dir='../coco/annotations/'):
+def convert_coco_json(json_dir='/data/dataset/coco/annotations/'):
     dir = make_folders(path='out/')  # output directory
     jsons = glob.glob(json_dir + '*.json')
     coco80 = coco91_to_coco80_class()
 
     # Import json
     for json_file in sorted(jsons):
+        if 'instances' not in json_file:
+            continue
         fn = 'out/labels/%s/' % Path(json_file).stem.replace('instances_', '')  # folder name
         os.mkdir(fn)
         with open(json_file) as f:
