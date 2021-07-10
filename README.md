@@ -157,6 +157,9 @@ export PYTHONPATH=$PWD
 python3 test.py --weights 权重路径
 ```
 
+### Pretrained Model
+链接: [https://pan.baidu.com/s/1xUEWSAKuqtq-myXcftgzOQ](https://pan.baidu.com/s/1xUEWSAKuqtq-myXcftgzOQ) 提取码: xjjw
+
 ## Comparision with other methods in github
 github上也有一些其他作者实现的mobile-yolo系列，其中paddle和keras都是用mobilev1作为backbone，无法直接计算Flops。
 darknet的Flops采用作者Readme中的BFlops。
